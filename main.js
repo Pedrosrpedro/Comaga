@@ -155,6 +155,22 @@ let player;
 let moveX = 0;
 let moveZ = 0;
 
+// Objeto para rastrear o estado das teclas WASD
+const keys = { w: false, a: false, s: false, d: false };
+window.addEventListener('keydown', (event) => {
+    const key = event.key.toLowerCase();
+    if (keys.hasOwnProperty(key)) {
+        keys[key] = true;
+    }
+});
+window.addEventListener('keyup', (event) => {
+    const key = event.key.toLowerCase();
+    if (keys.hasOwnProperty(key)) {
+        keys[key] = false;
+    }
+});
+
+
 function render() {
     if (gameState.currentScreen === 'menu') {
         canvas.classList.add('hidden');
@@ -184,7 +200,7 @@ function setupJoystick() {
     const options = {
         zone: joystickZone,
         mode: 'static',
-        position: { left: '50%', top: '50%' },
+        // A propriedade 'position' foi removida para o CSS controlar a localização
         color: 'white',
         size: 150
     };
@@ -211,7 +227,8 @@ async function launchGame(gameId) {
             try {
                 console.log("PASSO 1: Iniciando motor de jogo...");
                 if (!engine) {
-                    engine = new BABYLON.Engine(canvas, true);
+                    // O último 'true' ativa a adaptação à resolução do dispositivo (corrige baixa resolução)
+                    engine = new BABYLON.Engine(canvas, true, null, true);
                     console.log("Motor Babylon.js criado com sucesso.");
                 }
                 console.log("PASSO 2: Chamando startDisasterGame...");
@@ -228,15 +245,32 @@ async function launchGame(gameId) {
                 setupJoystick();
                 console.log("Joystick configurado.");
                 console.log("PASSO 5: Iniciando o loop de renderização...");
+                
                 engine.runRenderLoop(() => {
                     if (gameState.currentScreen === 'playing' && player && player.physicsImpostor) {
                         const playerSpeed = 7.5;
+                        
+                        // Começa com a movimentação do joystick
+                        let totalMoveX = moveX;
+                        let totalMoveZ = moveZ;
+
+                        // Adiciona a movimentação do teclado
+                        if (keys.w) totalMoveZ += 1;
+                        if (keys.s) totalMoveZ -= 1;
+                        if (keys.a) totalMoveX -= 1;
+                        if (keys.d) totalMoveX += 1;
+                        
+                        // Cria um vetor de movimento e o normaliza para evitar velocidade extra na diagonal
+                        const moveVector = new BABYLON.Vector3(totalMoveX, 0, totalMoveZ).normalize();
+
                         const currentVelocity = player.physicsImpostor.getLinearVelocity();
-                        const newVelocity = new BABYLON.Vector3(moveX * playerSpeed, currentVelocity.y, moveZ * playerSpeed);
+                        const newVelocity = new BABYLON.Vector3(moveVector.x * playerSpeed, currentVelocity.y, moveVector.z * playerSpeed);
+                        
                         player.physicsImpostor.setLinearVelocity(newVelocity);
                     }
                     scene.render();
                 });
+
                 window.addEventListener("resize", () => { engine.resize(); });
                 console.log("PASSO 6: Jogo carregado com sucesso! Mudando para a tela 'playing'.");
                 gameState.currentScreen = 'playing';
