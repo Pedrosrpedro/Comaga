@@ -144,11 +144,27 @@ function resetPlayer(player, scene) {
 }
 
 // Cria o objeto do jogador
+// Em disasterGame.js
+
 function createPlayer(scene) {
     const player = BABYLON.MeshBuilder.CreateCapsule("player", { height: 2, radius: 0.5 }, scene);
     player.position = new BABYLON.Vector3(0, 15, 0);
+    
+    // --- LÓGICA DE CARREGAMENTO DA TEXTURA ---
+    const playerMaterial = new BABYLON.StandardMaterial("playerMat", scene);
+    const savedTexture = localStorage.getItem("playerAvatarTexture");
+
+    if (savedTexture) {
+        // Se achou uma textura salva, cria uma textura a partir dela
+        const texture = new BABYLON.Texture(savedTexture, scene);
+        playerMaterial.diffuseTexture = texture;
+    } else {
+        // Senão, usa uma cor padrão
+        playerMaterial.diffuseColor = new BABYLON.Color3.FromHexString("#cccccc");
+    }
+    player.material = playerMaterial;
+    
     player.physicsImpostor = new BABYLON.PhysicsImpostor(player, BABYLON.PhysicsImpostor.CapsuleImpostor, { mass: 1, restitution: 0.1, friction: 0.5 }, scene);
-    // Não precisamos mais da trava de rotação aqui
     return player;
 }
 
