@@ -285,3 +285,89 @@ h2 {
 .log-message.error { color: #ff6b6b; font-weight: bold; background-color: rgba(255, 0, 0, 0.1);}
 .log-message.warn { color: #f9e25c; }
 .log-message.info { color: #61dafb; }
+
+/* Em style.css */
+
+/* ======================================================= */
+/*             ESTILOS DO EDITOR DE AVATAR                 */
+/* ======================================================= */
+
+.editor-ui-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    pointer-events: none; /* Permite clicar "através" do container no canvas */
+    z-index: 200;
+}
+
+.editor-ui-container button {
+    pointer-events: all; /* Torna os botões clicáveis */
+}
+
+.editor-top-bar, .editor-bottom-bar {
+    width: 100%;
+    background-color: rgba(42, 45, 50, 0.9);
+    padding: 10px;
+    display: flex;
+    align-items: center;
+}
+
+.editor-top-bar {
+    justify-content: space-between;
+}
+
+.editor-top-bar h2 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+#back-to-menu-btn, #save-avatar-btn {
+    background-color: #5c67f2;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+#back-to-menu-btn i, #save-avatar-btn i {
+    margin-right: 8px;
+}
+
+.editor-bottom-bar {
+    justify-content: space-around;
+    flex-wrap: wrap; /* Para telas menores */
+}
+
+.editor-tools, .editor-palette, .editor-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin: 5px;
+}
+
+.tool-btn, .control-btn {
+    background-color: #3e4147;
+    color: white;
+    border: 2px solid transparent;
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.tool-btn.active {
+    border-color: #61dafb;
+}
+
+.color-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 2px solid white;
+    cursor: pointer;
+}
