@@ -4,19 +4,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Sua Plataforma de Jogos</title>
+    
+    <!-- Importa a biblioteca de ícones Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    
+    <!-- Importa nosso arquivo de estilos CSS -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- O container principal onde nossa aplicação vai renderizar a UI -->
+
+    <!-- Container principal onde a interface (menu, HUD) será renderizada pelo JavaScript -->
     <div id="app"></div>
 
-    <!-- Elementos do Jogo que o Babylon precisa encontrar -->
+    <!-- Canvas onde o jogo 3D do Babylon.js será desenhado. Começa oculto. -->
     <canvas id="renderCanvas" class="hidden"></canvas>
+
+    <!-- Zona para o joystick virtual em dispositivos móveis. Começa oculta. -->
     <div id="joystickZone" class="hidden"></div>
 
-    <!-- FERRAMENTA DE DEBUG: CONSOLE MOBILE -->
-    <div id="debug-trigger"></div> <!-- Botão escondido para abrir o console -->
+    <!-- ======================================================= -->
+    <!--              FERRAMENTA DE DEPURAÇÃO (CONSOLE)          -->
+    <!-- ======================================================= -->
+
+    <!-- Botão visível para abrir/fechar o console -->
+    <div id="debug-trigger">
+        <i class="fa-solid fa-bug"></i> <!-- Ícone de "bug" -->
+    </div>
+    
+    <!-- O container do console em si. Começa oculto. -->
     <div id="mobile-console" class="hidden">
         <div class="console-header">
             <span>Console de Depuração</span>
@@ -29,21 +44,29 @@
 
     <!-- ======================================================= -->
     <!--                 IMPORTAÇÃO DAS BIBLIOTECAS              -->
+    <!-- A ordem de importação é importante!                     -->
     <!-- ======================================================= -->
 
-    <!-- BIBLIOTECAS DE JOGO (sempre primeiro) -->
+    <!-- BIBLIOTECAS DE JOGO (fundamentais) -->
     <script src="https://cdn.babylonjs.com/ammo.js"></script>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
 
-    <!-- BIBLIOTECAS DE MELHORIA -->
+    <!-- BIBLIOTECAS DE MELHORIA (efeitos, som, utilidades) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.5/gsap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
     
-    <!-- NOSSOS SCRIPTS (sempre por último) -->
+    <!-- ======================================================= -->
+    <!--           NOSSOS SCRIPTS (sempre por último)            -->
+    <!-- ======================================================= -->
+    
+    <!-- A lógica do mini-jogo -->
     <script src="disasterGame.js"></script> 
+    
+    <!-- O script principal que gerencia tudo -->
     <script src="main.js"></script>
+
 </body>
 </html>
