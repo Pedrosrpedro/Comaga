@@ -1,7 +1,6 @@
 // =======================================================
 // SEÇÃO 1: FUNÇÕES GLOBAIS DO CONSOLE
 // Estas funções estão no escopo global para serem chamadas pelo 'onclick' no HTML.
-// Isso garante que os botões do console sempre funcionem.
 // =======================================================
 function toggleConsole() {
     document.getElementById('mobile-console').classList.toggle('hidden');
@@ -16,45 +15,38 @@ function clearConsole() {
 
 // =======================================================
 // SEÇÃO 2: LÓGICA DE CAPTURA DO CONSOLE
-// Esta função auto-invocada (IIFE) sobrescreve as funções padrão do console
-// para redirecionar todas as mensagens para o nosso console visual na tela.
+// Esta função auto-invocada (IIFE) sobrescreve as funções padrão do console.
 // =======================================================
 (function setupMobileConsole() {
     const logContainer = document.getElementById('console-log-container');
 
-    // Função interna para adicionar uma mensagem formatada ao console visual
     function logToScreen(message, type = 'log') {
         const msgElement = document.createElement('div');
         msgElement.className = `log-message ${type}`;
         msgElement.textContent = `[${type.toUpperCase()}] ${message}`;
         logContainer.appendChild(msgElement);
-        logContainer.scrollTop = logContainer.scrollHeight; // Rola para a mensagem mais recente
+        logContainer.scrollTop = logContainer.scrollHeight;
     }
 
-    // Guarda referências às funções originais para não perdê-las
     const originalLog = console.log;
     const originalError = console.error;
     const originalWarn = console.warn;
 
-    // Sobrescreve a função console.log
     console.log = function(...args) {
         logToScreen(args.join(' '), 'log');
         originalLog.apply(console, args);
     };
 
-    // Sobrescreve a função console.error
     console.error = function(...args) {
         logToScreen(args.join(' '), 'error');
         originalError.apply(console, args);
     };
 
-    // Sobrescreve a função console.warn
     console.warn = function(...args) {
         logToScreen(args.join(' '), 'warn');
         originalWarn.apply(console, args);
     };
 
-    // Captura erros globais não tratados que poderiam quebrar o script
     window.onerror = function(message, source, lineno) {
         console.error(`ERRO NÃO TRATADO: "${message}" em ${source} na linha ${lineno}`);
         return true;
@@ -82,8 +74,16 @@ const sounds = {
 // SEÇÃO 4: ESTADO CENTRAL E FUNÇÕES DE UI
 // =======================================================
 const gameState = {
-    currentScreen: 'menu',
-    hud: { message: '', timer: '' }
+    currentScreen: 'menu', // Telas: 'menu', 'playing', 'loading', 'avatar_editor'
+    hud: { message: '', timer: '' },
+    editor: {
+        scene: null,
+        avatar: null,
+        texture: null,
+        tool: 'pen', // Ferramentas: 'pen', 'bucket', 'eraser'
+        color: '#ff0000',
+        isPainting: false
+    }
 };
 
 const availableGames = [
@@ -144,6 +144,36 @@ function createHudHTML() {
     `;
 }
 
+// NOVA FUNÇÃO para criar a UI do editor de avatar
+function createAvatarEditorUIHTML() {
+    const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#000000', '#ffffff', '#ff8800', '#8800ff'];
+    const colorButtons = colors.map(c => `<button class="color-btn" style="background-color: ${c};" data-color="${c}"></button>`).join('');
+
+    return `
+        <div class="editor-ui-container">
+            <div class="editor-top-bar">
+                <button id="back-to-menu-btn"><i class="fa-solid fa-arrow-left"></i> Voltar</button>
+                <h2>Editor de Avatar</h2>
+                <button id="save-avatar-btn"><i class="fa-solid fa-save"></i> Salvar</button>
+            </div>
+            <div class="editor-bottom-bar">
+                <div class="editor-tools">
+                    <button class="tool-btn active" data-tool="pen"><i class="fa-solid fa-pencil"></i> Caneta</button>
+                    <button class="tool-btn" data-tool="bucket"><i class="fa-solid fa-fill-drip"></i> Balde</button>
+                    <button class="tool-btn" data-tool="eraser"><i class="fa-solid fa-eraser"></i> Borracha</button>
+                </div>
+                <div class="editor-palette">${colorButtons}</div>
+                <div class="editor-controls">
+                    <button class="control-btn" data-control="rot-left"><i class="fa-solid fa-rotate-left"></i></button>
+                    <button class="control-btn" data-control="rot-right"><i class="fa-solid fa-rotate-right"></i></button>
+                    <button class="control-btn" data-control="view-top"><i class="fa-solid fa-arrow-up"></i></button>
+                    <button class="control-btn" data-control="view-bottom"><i class="fa-solid fa-arrow-down"></i></button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 // =======================================================
 // SEÇÃO 5: LÓGICA PRINCIPAL DA APLICAÇÃO
 // =======================================================
@@ -155,7 +185,6 @@ let player;
 let moveX = 0;
 let moveZ = 0;
 
-// Objeto para rastrear o estado das teclas WASD
 const keys = { w: false, a: false, s: false, d: false };
 window.addEventListener('keydown', (event) => {
     const key = event.key.toLowerCase();
@@ -170,22 +199,26 @@ window.addEventListener('keyup', (event) => {
     }
 });
 
-
 function render() {
+    // Esconde tudo por padrão para evitar que elementos apareçam na tela errada
+    canvas.classList.add('hidden');
+    joystickZone.classList.add('hidden');
+    appContainer.innerHTML = ''; // Limpa a UI antiga
+
     if (gameState.currentScreen === 'menu') {
-        canvas.classList.add('hidden');
-        joystickZone.classList.add('hidden');
         appContainer.innerHTML = `<div class="roblox-container">${createHeaderHTML()}<main class="main-content">${createFriendsListHTML()}${createGamesGridHTML(availableGames)}</main></div>`;
         gsap.from(".roblox-container", { duration: 0.5, opacity: 0 });
     } else if (gameState.currentScreen === 'playing') {
         canvas.classList.remove('hidden');
-        // CORREÇÃO: Força o motor a se redimensionar quando o canvas fica visível, corrigindo a resolução.
-        if (engine) engine.resize(); 
+        if (engine) engine.resize();
         joystickZone.classList.remove('hidden');
         appContainer.innerHTML = createHudHTML();
-        gsap.from(".hud-container", { duration: 0.5, y: -50, opacity: 0, ease: "back.out(1.7)" });
     } else if (gameState.currentScreen === 'loading') {
-        appContainer.innerHTML = `<div class="roblox-container"><h1>Carregando Jogo...</h1></div>`;
+        appContainer.innerHTML = `<div class="roblox-container"><h1>Carregando...</h1></div>`;
+    } else if (gameState.currentScreen === 'avatar_editor') {
+        canvas.classList.remove('hidden');
+        if (engine) engine.resize();
+        appContainer.innerHTML = createAvatarEditorUIHTML();
     }
 }
 
@@ -202,7 +235,6 @@ function setupJoystick() {
     const options = {
         zone: joystickZone,
         mode: 'static',
-        // CORREÇÃO: A propriedade 'position' foi removida para o CSS controlar a localização.
         color: 'white',
         size: 150
     };
@@ -210,8 +242,8 @@ function setupJoystick() {
     manager.on('move', (event, data) => {
         const angle = data.angle.radian;
         const force = Math.min(data.force, 2);
-        moveZ = Math.cos(angle) * force;
-        moveX = Math.sin(angle) * force;
+        moveX = Math.cos(angle) * force;
+        moveZ = Math.sin(angle) * force;
     });
     manager.on('end', () => {
         moveX = 0;
@@ -222,18 +254,18 @@ function setupJoystick() {
 async function launchGame(gameId) {
     gameState.currentScreen = 'loading';
     render();
+
+    // Garante que a cena do editor seja limpa antes de iniciar o jogo
+    stopAvatarEditor(engine);
+
     gsap.to(".roblox-container", {
         duration: 0.5,
         opacity: 0,
         onComplete: async () => {
             try {
-                console.log("PASSO 1: Iniciando motor de jogo...");
                 if (!engine) {
-                    // CORREÇÃO: O último 'true' ativa a adaptação à densidade de pixels do dispositivo.
                     engine = new BABYLON.Engine(canvas, true, null, true);
-                    console.log("Motor Babylon.js criado com sucesso.");
                 }
-                console.log("PASSO 2: Chamando startDisasterGame...");
                 const gameData = await startDisasterGame(engine, canvas, updateHud, sounds);
                 
                 if (!gameData || !gameData.scene || !gameData.player) {
@@ -242,39 +274,26 @@ async function launchGame(gameId) {
                 
                 const scene = gameData.scene;
                 player = gameData.player;
-                console.log("PASSO 3: Cena e jogador recebidos com sucesso.");
-                console.log("PASSO 4: Configurando o joystick...");
                 setupJoystick();
-                console.log("Joystick configurado.");
-                console.log("PASSO 5: Iniciando o loop de renderização...");
                 
                 engine.runRenderLoop(() => {
                     if (gameState.currentScreen === 'playing' && player && player.physicsImpostor) {
                         const playerSpeed = 7.5;
-                        
-                        // Começa com a movimentação do joystick
                         let totalMoveX = moveX;
                         let totalMoveZ = moveZ;
-
-                        // Adiciona a movimentação do teclado
                         if (keys.w) totalMoveZ += 1;
                         if (keys.s) totalMoveZ -= 1;
                         if (keys.a) totalMoveX -= 1;
                         if (keys.d) totalMoveX += 1;
-                        
-                        // Cria um vetor de movimento e o normaliza para evitar velocidade extra na diagonal
-                        const moveVector = new BABYLON.Vector3(totalMoveX, 0, totalMoveZ).normalize();
-
+                        const moveVector = new BABYLON.Vector3(-totalMoveX, 0, -totalMoveZ).normalize();
                         const currentVelocity = player.physicsImpostor.getLinearVelocity();
                         const newVelocity = new BABYLON.Vector3(moveVector.x * playerSpeed, currentVelocity.y, moveVector.z * playerSpeed);
-                        
                         player.physicsImpostor.setLinearVelocity(newVelocity);
                     }
-                    scene.render();
+                    if(scene.isReady()) scene.render();
                 });
 
-                window.addEventListener("resize", () => { engine.resize(); });
-                console.log("PASSO 6: Jogo carregado com sucesso! Mudando para a tela 'playing'.");
+                window.addEventListener("resize", () => { if(engine) engine.resize(); });
                 gameState.currentScreen = 'playing';
                 sounds.music.play();
                 render();
@@ -287,26 +306,157 @@ async function launchGame(gameId) {
     });
 }
 
+// NOVA FUNÇÃO para iniciar o editor de avatar
+async function launchAvatarEditor() {
+    gameState.currentScreen = 'loading';
+    render();
+
+    // Para qualquer loop de renderização anterior (do jogo, por exemplo)
+    if (engine) {
+        engine.stopRenderLoop();
+        // Descarta a cena antiga para liberar memória
+        const oldScene = engine.getScene();
+        if(oldScene) {
+            oldScene.dispose();
+        }
+    }
+
+    try {
+        if (!engine) {
+            engine = new BABYLON.Engine(canvas, true, null, true);
+        }
+        
+        // Inicia a cena do editor vinda do novo arquivo
+        const editorData = await startAvatarEditor(engine, canvas);
+        gameState.editor.scene = editorData.scene;
+        gameState.editor.avatar = editorData.avatar;
+        gameState.editor.texture = editorData.texture;
+        
+        gameState.currentScreen = 'avatar_editor';
+        render();
+
+    } catch(e) {
+        console.error("Falha ao iniciar o editor de avatar", e);
+        gameState.currentScreen = 'menu'; // Volta pro menu em caso de erro
+        render();
+    }
+}
+
 // =======================================================
 // SEÇÃO 6: INICIALIZAÇÃO E EVENT LISTENERS
-// Esperamos o DOM carregar completamente para adicionar os eventos de clique.
 // =======================================================
 document.addEventListener('DOMContentLoaded', () => {
+    // Listener geral no container do app para lidar com cliques em botões
     appContainer.addEventListener('click', (event) => {
-        const gameCard = event.target.closest('.game-card');
+        const target = event.target;
+        const gameCard = target.closest('.game-card');
+        const navItem = target.closest('.nav-item');
+
+        // Clicou num card de jogo
         if (gameCard) {
             sounds.click.play();
-            gsap.to(gameCard, {
-                scale: 0.95, yoyo: true, repeat: 1, duration: 0.1,
-                onComplete: () => {
-                    const gameId = gameCard.dataset.gameId;
-                    if (gameId) {
-                        launchGame(gameId);
-                    }
-                }
+            gsap.to(gameCard, { scale: 0.95, yoyo: true, repeat: 1, duration: 0.1,
+                onComplete: () => launchGame(gameCard.dataset.gameId)
             });
+            return; // Encerra a execução para evitar outros checks
+        }
+        
+        // Clicou num item da navegação
+        if (navItem) {
+            sounds.click.play();
+            if (navItem.textContent.includes("Avatar")) {
+                launchAvatarEditor();
+            } else if (navItem.textContent.includes("Home")) {
+                 stopAvatarEditor(engine); // Garante que a cena do editor seja limpa
+                 gameState.currentScreen = 'menu';
+                 render();
+            }
+            return;
+        }
+
+        // Se estamos no editor de avatar, checa os botões específicos
+        if (gameState.currentScreen === 'avatar_editor') {
+            const toolBtn = target.closest('.tool-btn');
+            const colorBtn = target.closest('.color-btn');
+            const controlBtn = target.closest('.control-btn');
+            const backBtn = target.closest('#back-to-menu-btn');
+            const saveBtn = target.closest('#save-avatar-btn');
+
+            if (toolBtn) {
+                document.querySelector('.tool-btn.active').classList.remove('active');
+                toolBtn.classList.add('active');
+                gameState.editor.tool = toolBtn.dataset.tool;
+            }
+            if (colorBtn) {
+                gameState.editor.color = colorBtn.dataset.color;
+            }
+            if (backBtn) {
+                stopAvatarEditor(engine);
+                gameState.currentScreen = 'menu';
+                render();
+            }
+            if (saveBtn) {
+                const base64Canvas = gameState.editor.texture.toDataURL();
+                localStorage.setItem("playerAvatarTexture", base64Canvas);
+                alert("Avatar salvo!");
+            }
+            if (controlBtn && gameState.editor.scene) {
+                const camera = gameState.editor.scene.activeCamera;
+                const control = controlBtn.dataset.control;
+                if(control === 'rot-left') camera.alpha -= 0.3;
+                if(control === 'rot-right') camera.alpha += 0.3;
+                if(control === 'view-top') camera.beta = 0.1; // beta 0 é topo
+                if(control === 'view-bottom') camera.beta = Math.PI - 0.1; // beta PI é baixo
+            }
         }
     });
+
+    // --- Listeners de pintura no Canvas ---
+    canvas.addEventListener('pointerdown', (evt) => {
+        if (gameState.currentScreen !== 'avatar_editor') return;
+        gameState.editor.isPainting = true;
+        paint(evt); // Pinta no primeiro clique também
+    });
+    canvas.addEventListener('pointermove', (evt) => {
+        if (gameState.currentScreen !== 'avatar_editor' || !gameState.editor.isPainting) return;
+        paint(evt);
+    });
+    canvas.addEventListener('pointerup', () => {
+        gameState.editor.isPainting = false;
+    });
+    canvas.addEventListener('pointerout', () => { // Para de pintar se o mouse sair do canvas
+        gameState.editor.isPainting = false;
+    });
+
+    function paint(evt) {
+        const { scene, tool, color, texture } = gameState.editor;
+        if (!scene) return;
+
+        const pickInfo = scene.pick(scene.pointerX, scene.pointerY);
+        if (pickInfo.hit) {
+            const textureContext = texture.getContext();
+            
+            if (tool === 'bucket') {
+                textureContext.fillStyle = color;
+                textureContext.fillRect(0, 0, 512, 512);
+            } 
+            else if (tool === 'pen' || tool === 'eraser') {
+                const uv = pickInfo.getTextureCoordinates();
+                if(!uv) return; // Sai se não conseguir as coordenadas
+
+                const posX = uv.x * 512;
+                const posY = (1 - uv.y) * 512;
+                
+                textureContext.beginPath();
+                textureContext.fillStyle = (tool === 'eraser') ? '#cccccc' : color;
+                const brushSize = (tool === 'eraser') ? 20 : 10;
+                textureContext.arc(posX, posY, brushSize, 0, 2 * Math.PI);
+                textureContext.fill();
+            }
+            texture.update();
+        }
+    }
+
     // Renderização inicial
     render();
-});
+});```
