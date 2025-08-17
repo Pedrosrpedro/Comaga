@@ -9,6 +9,12 @@ const hudTimer = document.getElementById("hudTimer");
 
 // Função principal que é chamada pelo main.js
 async function startDisasterGame(engine, canvas) {
+    // =======================================================
+    // CORREÇÃO DO BUG ESTÁ AQUI!
+    // Espera o motor de física Ammo.js estar 100% pronto.
+    await Ammo(); 
+    // =======================================================
+
     const scene = new BABYLON.Scene(engine);
     
     // Configuração da física e gravidade
