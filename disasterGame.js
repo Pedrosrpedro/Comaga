@@ -19,32 +19,32 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
     const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
     light.intensity = 1.0;
 
-    const camera = new BABYLON.FollowCamera("followCam", new BABYLON.Vector3(0, 15, -25), scene);
+    // A câmera agora é uma ArcRotateCamera para dar controle ao jogador
+    const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 15, BABYLON.Vector3.Zero(), scene);
+    camera.attachControl(canvas, true);
+    
+    // Limites da câmera para uma melhor experiência
+    camera.lowerRadiusLimit = 5;
+    camera.upperRadiusLimit = 30;
+    camera.lowerBetaLimit = 0.1;
+    camera.upperBetaLimit = (Math.PI / 2) * 0.9;
 
     createDisasterMap(scene);
-    // A variável 'player' agora é local para esta função e retornada no final
     const player = createPlayer(scene);
 
-    camera.lockedTarget = player;
-    camera.radius = 20;
-    camera.heightOffset = 10;
-
     scene.onBeforeRenderObservable.add(() => {
+        // A cada frame, o alvo da câmera é atualizado para a posição do jogador
+        camera.target.copyFrom(player.position);
+
         // Lógica de morte por lava
         if (isPlayerAlive && lava && player.position.y < lava.position.y) {
-            playerDied(player, sounds, onHudUpdate); // Passa os parâmetros necessários
+            playerDied(player, sounds, onHudUpdate);
         }
 
-        // =========================================================================
-        // MUDANÇA 1: MANTER O JOGADOR EM PÉ (ENQUANTO VIVO)
-        // Esta é a nova lógica que força o jogador a ficar reto a cada frame.
-        // =========================================================================
+        // Lógica para manter o jogador em pé
         if (isPlayerAlive && player.physicsImpostor) {
-            // Pega a velocidade de rotação atual
             const currentAngularVelocity = player.physicsImpostor.getAngularVelocity();
-            // Cria uma nova velocidade de rotação que zera os eixos X e Z, mantendo o eixo Y (para virar no futuro)
             const correctedAngularVelocity = new BABYLON.Vector3(0, currentAngularVelocity.y, 0);
-            // Aplica a velocidade corrigida, impedindo que ele tombe
             player.physicsImpostor.setAngularVelocity(correctedAngularVelocity);
         }
     });
@@ -103,63 +103,49 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
         }, 5000);
     }
     
+    // Função chamada quando o jogador morre
+    function playerDied(player, sounds, onHudUpdate) {
+        if (!isPlayerAlive) return;
+        isPlayerAlive = false;
+        sounds.playerFall.play();
+        onHudUpdate("VOCÊ FOI ELIMINADO!", "Espere a próxima rodada");
+    }
+
+    // Função para resetar o estado do jogador para uma nova rodada
+    function resetPlayer(player, scene) {
+        isPlayerAlive = true;
+        
+        if (player.physicsImpostor) {
+            player.physicsImpostor.dispose();
+        }
+        
+        player.position = new BABYLON.Vector3(0, 15, 0);
+        player.rotation = new BABYLON.Vector3(0, 0, 0);
+        player.physicsImpostor = new BABYLON.PhysicsImpostor(player, BABYLON.PhysicsImpostor.CapsuleImpostor, { mass: 1, restitution: 0.1, friction: 0.5 }, scene);
+    }
+
     // Inicia o primeiro ciclo do jogo
     startIntermission();
 
+    // Retorna a cena e o jogador para o main.js poder controlá-los
     return { scene, player };
 }
 
+
 // =======================================================
-// FUNÇÕES AUXILIARES
+// FUNÇÕES DE CRIAÇÃO DE OBJETOS
 // =======================================================
-
-// Função chamada quando o jogador morre
-function playerDied(player, sounds, onHudUpdate) {
-    if (!isPlayerAlive) return;
-    isPlayerAlive = false;
-    sounds.playerFall.play();
-    onHudUpdate("VOCÊ FOI ELIMINADO!", "Espere a próxima rodada");
-    
-    // =========================================================================
-    // MUDANÇA 2: PERMITIR A QUEDA
-    // Removemos a linha 'player.physicsImpostor.dispose()'.
-    // Ao não remover o corpo físico, ele continuará no mundo e poderá tombar
-    // naturalmente, já que a lógica para mantê-lo em pé (MUDANÇA 1) para de rodar.
-    // =========================================================================
-}
-
-// Função para resetar o estado do jogador para uma nova rodada
-function resetPlayer(player, scene) {
-    isPlayerAlive = true;
-    
-    // Se o corpo físico antigo ainda existir, removemos antes de criar um novo
-    if (player.physicsImpostor) {
-        player.physicsImpostor.dispose();
-    }
-    
-    player.position = new BABYLON.Vector3(0, 15, 0);
-    player.rotation = new BABYLON.Vector3(0, 0, 0); // Garante que ele comece em pé
-    player.physicsImpostor = new BABYLON.PhysicsImpostor(player, BABYLON.PhysicsImpostor.CapsuleImpostor, { mass: 1, restitution: 0.1, friction: 0.5 }, scene);
-    // Não precisamos mais da trava de rotação aqui
-}
-
-// Cria o objeto do jogador
-// Em disasterGame.js
-
 function createPlayer(scene) {
     const player = BABYLON.MeshBuilder.CreateCapsule("player", { height: 2, radius: 0.5 }, scene);
     player.position = new BABYLON.Vector3(0, 15, 0);
     
-    // --- LÓGICA DE CARREGAMENTO DA TEXTURA ---
     const playerMaterial = new BABYLON.StandardMaterial("playerMat", scene);
     const savedTexture = localStorage.getItem("playerAvatarTexture");
 
     if (savedTexture) {
-        // Se achou uma textura salva, cria uma textura a partir dela
         const texture = new BABYLON.Texture(savedTexture, scene);
         playerMaterial.diffuseTexture = texture;
     } else {
-        // Senão, usa uma cor padrão
         playerMaterial.diffuseColor = new BABYLON.Color3.FromHexString("#cccccc");
     }
     player.material = playerMaterial;
@@ -168,7 +154,6 @@ function createPlayer(scene) {
     return player;
 }
 
-// Cria o mapa com o chão e as torres
 function createDisasterMap(scene) {
     const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 100, height: 100 }, scene);
     ground.physicsImpostor = new BABYLON.PhysicsImpostor(ground, BABYLON.PhysicsImpostor.BoxImpostor, { mass: 0 }, scene);
