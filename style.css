@@ -212,15 +212,33 @@ h2 {
 /*             ESTILOS DO CONSOLE DE DEPURAÇÃO             */
 /* ======================================================= */
 
+/* ... (todos os seus estilos anteriores) ... */
+
+/* SUBSTITUA o estilo antigo de #debug-trigger por este */
 #debug-trigger {
     position: fixed;
-    bottom: 0;
-    right: 0;
+    bottom: 10px;
+    right: 10px;
     width: 50px;
     height: 50px;
+    background-color: #5c67f2;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 24px;
+    cursor: pointer;
     z-index: 9998;
-    /* Deixe transparente para ser "invisível" */
-    opacity: 0; 
+    opacity: 0.7; /* Semi-transparente para não atrapalhar */
+    transition: opacity 0.3s;
+}
+
+#debug-trigger:hover {
+    opacity: 1;
+}
+
+/* ... (o resto dos estilos do console continuam os mesmos) ... */
 }
 
 #mobile-console {
