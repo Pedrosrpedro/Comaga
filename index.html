@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Sua Plataforma de Jogos</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Tela do Menu Principal -->
+    <div id="mainMenu" class="menu-container">
+        <h1>Minha Plataforma</h1>
+        <p>Escolha uma experiência para começar:</p>
+        <div class="games-list">
+            <button class="game-button" data-game="disaster_survival">Sobreviva ao Desastre</button>
+            <button class="game-button" data-game="jogo_aventura">Aventura na Floresta (Legado)</button>
+        </div>
+    </div>
+
+    <!-- HUD do Jogo (inicialmente oculta) -->
+    <div id="gameHud" class="hud-container hidden">
+        <p id="hudMessage">Carregando...</p>
+        <p id="hudTimer"></p>
+    </div>
+
+    <!-- Canvas onde o jogo 3D será renderizado -->
+    <canvas id="renderCanvas" class="hidden"></canvas>
+
+    <!-- Zona para ativar o Joystick em dispositivos móveis -->
+    <div id="joystickZone" class="joystick-zone hidden"></div>
+
+    <!-- ======================================================= -->
+    <!--                 IMPORTAÇÃO DAS BIBLIOTECAS              -->
+    <!-- ======================================================= -->
+
+    <!-- PRIMEIRO, a engine de física (Ammo.js) -->
+    <script src="https://cdn.babylonjs.com/ammo.js"></script>
+
+    <!-- SEGUNDO, a engine de jogo (Babylon.js) -->
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+
+    <!-- Opcional, mas útil: Loaders para importar modelos 3D (glTF, OBJ, etc.) -->
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+
+    <!-- Biblioteca para o Joystick virtual -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
+
+
+    <!-- ======================================================= -->
+    <!--                 NOSSOS SCRIPTS DE JOGO                  -->
+    <!-- ======================================================= -->
+
+    <!-- Script com a lógica do jogo de desastre -->
+    <script src="disasterGame.js"></script> 
+
+    <!-- Script principal que gerencia o menu e inicia os jogos -->
+    <script src="main.js"></script>
+
+</body>
+</html>
