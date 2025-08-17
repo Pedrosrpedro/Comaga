@@ -11,7 +11,6 @@
     const logContainer = document.getElementById('console-log-container');
     const closeBtn = document.getElementById('console-close');
     const clearBtn = document.getElementById('console-clear');
-    let clickCount = 0;
 
     // Função interna para adicionar uma mensagem formatada ao console visual
     function logToScreen(message, type = 'log') {
@@ -53,21 +52,12 @@
         return true; // Impede que o erro padrão apareça no console do navegador
     };
 
-    // Lógica do botão escondido: clique 5 vezes rapidamente no canto inferior direito
-    trigger.addEventListener('click', () => {
-        clickCount++;
-        if (clickCount >= 5) {
-            consoleContainer.classList.remove('hidden');
-            clickCount = 0;
-        }
-        // Reseta a contagem se o usuário demorar mais de 2 segundos entre os cliques
-        setTimeout(() => { clickCount = 0; }, 2000);
-    });
-
+    // Adiciona os eventos para os botões do console
+    trigger.addEventListener('click', () => consoleContainer.classList.toggle('hidden'));
     closeBtn.addEventListener('click', () => consoleContainer.classList.add('hidden'));
     clearBtn.addEventListener('click', () => logContainer.innerHTML = '');
 
-    console.log("Console de depuração iniciado. Clique 5x no canto inferior direito para abrir.");
+    console.log("Console de depuração iniciado. Clique no ícone de bug para abrir/fechar.");
 })();
 
 
@@ -176,7 +166,12 @@ function createHudHTML() {
 const appContainer = document.getElementById('app');
 const canvas = document.getElementById('renderCanvas');
 const joystickZone = document.getElementById('joystickZone');
-let engine; // A engine do Babylon.js
+
+// Variáveis globais para o motor e o controle do jogador
+let engine;
+let player;
+let moveX = 0;
+let moveZ = 0;
 
 // A função mais importante: lê o gameState e atualiza o HTML da página.
 function render() {
@@ -211,24 +206,46 @@ function render() {
 function updateHud(message, timer) {
     gameState.hud.message = message;
     gameState.hud.timer = timer;
-    // Somente renderiza se já estivermos na tela de jogo, para evitar piscar a tela
     if (gameState.currentScreen === 'playing') {
         render();
     }
 }
+
+// Função para configurar o Joystick (Nipple.js)
+function setupJoystick() {
+    console.log("Configurando o joystick virtual...");
+    const options = {
+        zone: joystickZone,
+        mode: 'static',
+        position: { left: '50%', top: '50%' },
+        color: 'white',
+        size: 150
+    };
+    const manager = nipplejs.create(options);
+
+    manager.on('move', (event, data) => {
+        const angle = data.angle.radian;
+        const force = Math.min(data.force, 2); // Limita a força para não ser excessiva
+        moveZ = Math.cos(angle) * force;
+        moveX = Math.sin(angle) * force;
+    });
+
+    manager.on('end', () => {
+        moveX = 0;
+        moveZ = 0;
+    });
+}
+
 
 // Função que gerencia a transição do menu para o jogo 3D.
 async function launchGame(gameId) {
     gameState.currentScreen = 'loading';
     render();
 
-    // Animação GSAP para o menu desaparecer
     gsap.to(".roblox-container", {
         duration: 0.5,
         opacity: 0,
-        // onComplete garante que o código pesado do jogo só rode DEPOIS que a animação terminar.
         onComplete: async () => {
-            // Bloco TRY...CATCH para capturar qualquer erro durante a inicialização do jogo.
             try {
                 console.log("Iniciando motor de jogo...");
                 if (!engine) {
@@ -236,14 +253,28 @@ async function launchGame(gameId) {
                 }
 
                 console.log("Iniciando jogo: 'Sobreviva ao Desastre'...");
-                // Passamos a função updateHud e o objeto de sons para o jogo
-                const scene = await startDisasterGame(engine, canvas, updateHud, sounds);
                 
-                if (!scene) {
-                    throw new Error("A cena do jogo retornou nula. Falha na criação.");
+                const gameData = await startDisasterGame(engine, canvas, updateHud, sounds);
+                const scene = gameData.scene;
+                player = gameData.player; // Armazena a referência do jogador
+
+                if (!scene || !player) {
+                    throw new Error("A cena ou o jogador não foram criados corretamente.");
                 }
 
+                setupJoystick();
+
                 engine.runRenderLoop(() => {
+                    if (gameState.currentScreen === 'playing' && player && player.physicsImpostor) {
+                        const playerSpeed = 7.5;
+                        const currentVelocity = player.physicsImpostor.getLinearVelocity();
+                        const newVelocity = new BABYLON.Vector3(
+                            moveX * playerSpeed,
+                            currentVelocity.y,
+                            moveZ * playerSpeed
+                        );
+                        player.physicsImpostor.setLinearVelocity(newVelocity);
+                    }
                     scene.render();
                 });
 
@@ -253,12 +284,11 @@ async function launchGame(gameId) {
 
                 console.log("Jogo carregado com sucesso!");
                 gameState.currentScreen = 'playing';
-                sounds.music.play(); // Toca a música de fundo
+                sounds.music.play();
                 render();
 
             } catch (error) {
                 console.error("FALHA CRÍTICA AO INICIAR O JOGO:", error.message, error.stack);
-                // Volta para o menu em caso de erro, para que o usuário não fique preso
                 gameState.currentScreen = 'menu';
                 render();
             }
@@ -271,11 +301,9 @@ async function launchGame(gameId) {
 // Ouve as ações do usuário e dispara a lógica correspondente.
 // =======================================================
 appContainer.addEventListener('click', (event) => {
-    // Procura pelo elemento .game-card mais próximo do local onde o usuário clicou
     const gameCard = event.target.closest('.game-card');
     if (gameCard) {
-        sounds.click.play(); // Toca o som de clique
-        // Animação GSAP no card clicado para dar feedback visual
+        sounds.click.play();
         gsap.to(gameCard, { 
             scale: 0.95, 
             yoyo: true, 
