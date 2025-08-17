@@ -1,6 +1,5 @@
 // =======================================================
 // SEÇÃO 1: FUNÇÕES GLOBAIS DO CONSOLE
-// Estas funções estão no escopo global para serem chamadas pelo 'onclick' no HTML.
 // =======================================================
 function toggleConsole() {
     document.getElementById('mobile-console').classList.toggle('hidden');
@@ -15,7 +14,6 @@ function clearConsole() {
 
 // =======================================================
 // SEÇÃO 2: LÓGICA DE CAPTURA DO CONSOLE
-// Esta função auto-invocada (IIFE) sobrescreve as funções padrão do console.
 // =======================================================
 (function setupMobileConsole() {
     const logContainer = document.getElementById('console-log-container');
@@ -74,13 +72,13 @@ const sounds = {
 // SEÇÃO 4: ESTADO CENTRAL E FUNÇÕES DE UI
 // =======================================================
 const gameState = {
-    currentScreen: 'menu', // Telas: 'menu', 'playing', 'loading', 'avatar_editor'
+    currentScreen: 'menu',
     hud: { message: '', timer: '' },
     editor: {
         scene: null,
         avatar: null,
         texture: null,
-        tool: 'pen', // Ferramentas: 'pen', 'bucket', 'eraser'
+        tool: 'move', // Ferramenta inicial é mover a câmera
         color: '#ff0000',
         isPainting: false
     }
@@ -144,7 +142,6 @@ function createHudHTML() {
     `;
 }
 
-// NOVA FUNÇÃO para criar a UI do editor de avatar
 function createAvatarEditorUIHTML() {
     const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#000000', '#ffffff', '#ff8800', '#8800ff'];
     const colorButtons = colors.map(c => `<button class="color-btn" style="background-color: ${c};" data-color="${c}"></button>`).join('');
@@ -158,7 +155,8 @@ function createAvatarEditorUIHTML() {
             </div>
             <div class="editor-bottom-bar">
                 <div class="editor-tools">
-                    <button class="tool-btn active" data-tool="pen"><i class="fa-solid fa-pencil"></i> Caneta</button>
+                    <button class="tool-btn active" data-tool="move"><i class="fa-solid fa-arrows-up-down-left-right"></i> Câmera</button>
+                    <button class="tool-btn" data-tool="pen"><i class="fa-solid fa-pencil"></i> Caneta</button>
                     <button class="tool-btn" data-tool="bucket"><i class="fa-solid fa-fill-drip"></i> Balde</button>
                     <button class="tool-btn" data-tool="eraser"><i class="fa-solid fa-eraser"></i> Borracha</button>
                 </div>
@@ -200,10 +198,9 @@ window.addEventListener('keyup', (event) => {
 });
 
 function render() {
-    // Esconde tudo por padrão para evitar que elementos apareçam na tela errada
     canvas.classList.add('hidden');
     joystickZone.classList.add('hidden');
-    appContainer.innerHTML = ''; // Limpa a UI antiga
+    appContainer.innerHTML = '';
 
     if (gameState.currentScreen === 'menu') {
         appContainer.innerHTML = `<div class="roblox-container">${createHeaderHTML()}<main class="main-content">${createFriendsListHTML()}${createGamesGridHTML(availableGames)}</main></div>`;
@@ -254,8 +251,6 @@ function setupJoystick() {
 async function launchGame(gameId) {
     gameState.currentScreen = 'loading';
     render();
-
-    // Garante que a cena do editor seja limpa antes de iniciar o jogo
     stopAvatarEditor(engine);
 
     gsap.to(".roblox-container", {
@@ -306,15 +301,12 @@ async function launchGame(gameId) {
     });
 }
 
-// NOVA FUNÇÃO para iniciar o editor de avatar
 async function launchAvatarEditor() {
     gameState.currentScreen = 'loading';
     render();
 
-    // Para qualquer loop de renderização anterior (do jogo, por exemplo)
     if (engine) {
         engine.stopRenderLoop();
-        // Descarta a cena antiga para liberar memória
         const oldScene = engine.getScene();
         if(oldScene) {
             oldScene.dispose();
@@ -326,18 +318,20 @@ async function launchAvatarEditor() {
             engine = new BABYLON.Engine(canvas, true, null, true);
         }
         
-        // Inicia a cena do editor vinda do novo arquivo
         const editorData = await startAvatarEditor(engine, canvas);
         gameState.editor.scene = editorData.scene;
         gameState.editor.avatar = editorData.avatar;
         gameState.editor.texture = editorData.texture;
+        
+        // Garante que o estado inicial seja o modo câmera
+        gameState.editor.tool = 'move'; 
         
         gameState.currentScreen = 'avatar_editor';
         render();
 
     } catch(e) {
         console.error("Falha ao iniciar o editor de avatar", e);
-        gameState.currentScreen = 'menu'; // Volta pro menu em caso de erro
+        gameState.currentScreen = 'menu';
         render();
     }
 }
@@ -346,35 +340,31 @@ async function launchAvatarEditor() {
 // SEÇÃO 6: INICIALIZAÇÃO E EVENT LISTENERS
 // =======================================================
 document.addEventListener('DOMContentLoaded', () => {
-    // Listener geral no container do app para lidar com cliques em botões
     appContainer.addEventListener('click', (event) => {
         const target = event.target;
         const gameCard = target.closest('.game-card');
         const navItem = target.closest('.nav-item');
 
-        // Clicou num card de jogo
         if (gameCard) {
             sounds.click.play();
             gsap.to(gameCard, { scale: 0.95, yoyo: true, repeat: 1, duration: 0.1,
                 onComplete: () => launchGame(gameCard.dataset.gameId)
             });
-            return; // Encerra a execução para evitar outros checks
+            return;
         }
         
-        // Clicou num item da navegação
         if (navItem) {
             sounds.click.play();
             if (navItem.textContent.includes("Avatar")) {
                 launchAvatarEditor();
             } else if (navItem.textContent.includes("Home")) {
-                 stopAvatarEditor(engine); // Garante que a cena do editor seja limpa
+                 stopAvatarEditor(engine);
                  gameState.currentScreen = 'menu';
                  render();
             }
             return;
         }
 
-        // Se estamos no editor de avatar, checa os botões específicos
         if (gameState.currentScreen === 'avatar_editor') {
             const toolBtn = target.closest('.tool-btn');
             const colorBtn = target.closest('.color-btn');
@@ -385,7 +375,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (toolBtn) {
                 document.querySelector('.tool-btn.active').classList.remove('active');
                 toolBtn.classList.add('active');
-                gameState.editor.tool = toolBtn.dataset.tool;
+                const newTool = toolBtn.dataset.tool;
+                gameState.editor.tool = newTool;
+
+                const camera = gameState.editor.scene.activeCamera;
+                if (newTool === 'move') {
+                    camera.attachControl(canvas, true);
+                } else {
+                    camera.detachControl();
+                }
             }
             if (colorBtn) {
                 gameState.editor.color = colorBtn.dataset.color;
@@ -396,7 +394,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 render();
             }
             if (saveBtn) {
-                const base64Canvas = gameState.editor.texture.toDataURL();
+                const base64Canvas = gameState.editor.texture.getContext().canvas.toDataURL();
                 localStorage.setItem("playerAvatarTexture", base64Canvas);
                 alert("Avatar salvo!");
             }
@@ -405,26 +403,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 const control = controlBtn.dataset.control;
                 if(control === 'rot-left') camera.alpha -= 0.3;
                 if(control === 'rot-right') camera.alpha += 0.3;
-                if(control === 'view-top') camera.beta = 0.1; // beta 0 é topo
-                if(control === 'view-bottom') camera.beta = Math.PI - 0.1; // beta PI é baixo
+                if(control === 'view-top') camera.beta = 0.1;
+                if(control === 'view-bottom') camera.beta = Math.PI - 0.1;
             }
         }
     });
 
-    // --- Listeners de pintura no Canvas ---
     canvas.addEventListener('pointerdown', (evt) => {
-        if (gameState.currentScreen !== 'avatar_editor') return;
+        if (gameState.currentScreen !== 'avatar_editor' || gameState.editor.tool === 'move') return;
         gameState.editor.isPainting = true;
-        paint(evt); // Pinta no primeiro clique também
+        paint(evt);
     });
     canvas.addEventListener('pointermove', (evt) => {
-        if (gameState.currentScreen !== 'avatar_editor' || !gameState.editor.isPainting) return;
+        if (gameState.currentScreen !== 'avatar_editor' || !gameState.editor.isPainting || gameState.editor.tool === 'move') return;
         paint(evt);
     });
     canvas.addEventListener('pointerup', () => {
         gameState.editor.isPainting = false;
     });
-    canvas.addEventListener('pointerout', () => { // Para de pintar se o mouse sair do canvas
+    canvas.addEventListener('pointerout', () => {
         gameState.editor.isPainting = false;
     });
 
@@ -442,7 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } 
             else if (tool === 'pen' || tool === 'eraser') {
                 const uv = pickInfo.getTextureCoordinates();
-                if(!uv) return; // Sai se não conseguir as coordenadas
+                if(!uv) return;
 
                 const posX = uv.x * 512;
                 const posY = (1 - uv.y) * 512;
