@@ -179,6 +179,8 @@ function render() {
         gsap.from(".roblox-container", { duration: 0.5, opacity: 0 });
     } else if (gameState.currentScreen === 'playing') {
         canvas.classList.remove('hidden');
+        // CORREÇÃO: Força o motor a se redimensionar quando o canvas fica visível, corrigindo a resolução.
+        if (engine) engine.resize(); 
         joystickZone.classList.remove('hidden');
         appContainer.innerHTML = createHudHTML();
         gsap.from(".hud-container", { duration: 0.5, y: -50, opacity: 0, ease: "back.out(1.7)" });
@@ -200,7 +202,7 @@ function setupJoystick() {
     const options = {
         zone: joystickZone,
         mode: 'static',
-        // A propriedade 'position' foi removida para o CSS controlar a localização
+        // CORREÇÃO: A propriedade 'position' foi removida para o CSS controlar a localização.
         color: 'white',
         size: 150
     };
@@ -227,7 +229,7 @@ async function launchGame(gameId) {
             try {
                 console.log("PASSO 1: Iniciando motor de jogo...");
                 if (!engine) {
-                    // O último 'true' ativa a adaptação à resolução do dispositivo (corrige baixa resolução)
+                    // CORREÇÃO: O último 'true' ativa a adaptação à densidade de pixels do dispositivo.
                     engine = new BABYLON.Engine(canvas, true, null, true);
                     console.log("Motor Babylon.js criado com sucesso.");
                 }
