@@ -275,49 +275,59 @@ async function launchGame(gameId) {
                     if (gameState.currentScreen === 'playing' && player && player.physicsImpostor) {
                         const camera = scene.activeCamera;
                         const playerSpeed = 7.5;
-                        const jumpForce = 8;
+                        const jumpForce = 6;
                         
-                        const currentVelocity = player.physicsImpostor.getLinearVelocity();
-                        const isOnGround = Math.abs(currentVelocity.y) < 0.1;
+                        // Usa um Raycast para detectar o chão de forma confiável
+                        const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
+                        const hit = scene.pickWithRay(ray, (mesh) => mesh.name === "ground" || mesh.name.startsWith("tower"));
+                        const isOnGround = hit.hit;
 
+                        // --- Lógica do Pulo ---
                         if (keys[' '] && isOnGround) {
                             player.physicsImpostor.applyImpulse(
                                 new BABYLON.Vector3(0, jumpForce, 0),
                                 player.getAbsolutePosition()
                             );
-                            keys[' '] = false;
                         }
+                        // Consome a tecla de pulo para evitar pulos repetidos
+                        keys[' '] = false;
 
+
+                        // --- Lógica de Movimento ---
                         let totalMoveX = moveX;
                         let totalMoveZ = moveZ;
-                        if (keys.w) totalMoveZ -= 1;
-                        if (keys.s) totalMoveZ += 1;
-                        if (keys.a) totalMoveX -= 1;
-                        if (keys.d) totalMoveX += 1;
+                        if (keys.w) totalMoveZ += 1; // Para frente
+                        if (keys.s) totalMoveZ -= 1; // Para trás
+                        if (keys.a) totalMoveX -= 1; // Para esquerda
+                        if (keys.d) totalMoveX += 1; // Para direita
 
-                        const forward = camera.getDirection(BABYLON.Vector3.Forward());
-                        const right = camera.getDirection(BABYLON.Vector3.Right());
+                        const cameraForward = camera.getDirection(BABYLON.Vector3.Forward());
+                        const cameraRight = camera.getDirection(BABYLON.Vector3.Right());
+                        cameraForward.y = 0;
+                        cameraRight.y = 0;
+                        cameraForward.normalize();
+                        cameraRight.normalize();
 
-                        forward.y = 0;
-                        right.y = 0;
-                        forward.normalize();
-                        right.normalize();
+                        // Combina o input com a direção da câmera
+                        const moveDirection = cameraRight.scale(totalMoveX).add(cameraForward.scale(totalMoveZ));
+                        const currentVelocity = player.physicsImpostor.getLinearVelocity();
 
-                        const moveDirection = right.scale(totalMoveX).add(forward.scale(totalMoveZ));
-                        
                         if (moveDirection.lengthSquared() > 0) {
                             moveDirection.normalize();
 
+                            // Rotaciona o jogador (a malha) para a direção do movimento
                             const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
-                            player.rotation.y = targetAngle;
+                            player.rotation.y = BABYLON.Scalar.Lerp(player.rotation.y, targetAngle, 0.1);
                             
+                            // Aplica a velocidade ao corpo físico
                             const newVelocity = moveDirection.scale(playerSpeed);
                             player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVelocity.x, currentVelocity.y, newVelocity.z));
                         } else {
+                            // Para o movimento horizontal se não houver input
                             player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
                         }
                     }
-                    if(scene.isReady()) scene.render();
+                    if(scene && scene.isReady()) scene.render();
                 });
 
                 window.addEventListener("resize", () => { if(engine) engine.resize(); });
