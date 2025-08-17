@@ -78,7 +78,7 @@ const gameState = {
         scene: null,
         avatar: null,
         texture: null,
-        tool: 'move', // Ferramenta inicial é mover a câmera
+        tool: 'move',
         color: '#ff0000',
         isPainting: false
     }
@@ -183,7 +183,7 @@ let player;
 let moveX = 0;
 let moveZ = 0;
 
-const keys = { w: false, a: false, s: false, d: false };
+const keys = { w: false, a: false, s: false, d: false, ' ': false };
 window.addEventListener('keydown', (event) => {
     const key = event.key.toLowerCase();
     if (keys.hasOwnProperty(key)) {
@@ -273,17 +273,49 @@ async function launchGame(gameId) {
                 
                 engine.runRenderLoop(() => {
                     if (gameState.currentScreen === 'playing' && player && player.physicsImpostor) {
+                        const camera = scene.activeCamera;
                         const playerSpeed = 7.5;
+                        const jumpForce = 8;
+                        
+                        const currentVelocity = player.physicsImpostor.getLinearVelocity();
+                        const isOnGround = Math.abs(currentVelocity.y) < 0.1;
+
+                        if (keys[' '] && isOnGround) {
+                            player.physicsImpostor.applyImpulse(
+                                new BABYLON.Vector3(0, jumpForce, 0),
+                                player.getAbsolutePosition()
+                            );
+                            keys[' '] = false;
+                        }
+
                         let totalMoveX = moveX;
                         let totalMoveZ = moveZ;
-                        if (keys.w) totalMoveZ += 1;
-                        if (keys.s) totalMoveZ -= 1;
+                        if (keys.w) totalMoveZ -= 1;
+                        if (keys.s) totalMoveZ += 1;
                         if (keys.a) totalMoveX -= 1;
                         if (keys.d) totalMoveX += 1;
-                        const moveVector = new BABYLON.Vector3(-totalMoveX, 0, -totalMoveZ).normalize();
-                        const currentVelocity = player.physicsImpostor.getLinearVelocity();
-                        const newVelocity = new BABYLON.Vector3(moveVector.x * playerSpeed, currentVelocity.y, moveVector.z * playerSpeed);
-                        player.physicsImpostor.setLinearVelocity(newVelocity);
+
+                        const forward = camera.getDirection(BABYLON.Vector3.Forward());
+                        const right = camera.getDirection(BABYLON.Vector3.Right());
+
+                        forward.y = 0;
+                        right.y = 0;
+                        forward.normalize();
+                        right.normalize();
+
+                        const moveDirection = right.scale(totalMoveX).add(forward.scale(totalMoveZ));
+                        
+                        if (moveDirection.lengthSquared() > 0) {
+                            moveDirection.normalize();
+
+                            const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
+                            player.rotation.y = targetAngle;
+                            
+                            const newVelocity = moveDirection.scale(playerSpeed);
+                            player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVelocity.x, currentVelocity.y, newVelocity.z));
+                        } else {
+                            player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
+                        }
                     }
                     if(scene.isReady()) scene.render();
                 });
@@ -323,7 +355,6 @@ async function launchAvatarEditor() {
         gameState.editor.avatar = editorData.avatar;
         gameState.editor.texture = editorData.texture;
         
-        // Garante que o estado inicial seja o modo câmera
         gameState.editor.tool = 'move'; 
         
         gameState.currentScreen = 'avatar_editor';
