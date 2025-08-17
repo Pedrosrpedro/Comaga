@@ -38,19 +38,22 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
         }
 
         // =========================================================================
-        // MUDANÇA CENTRAL: LÓGICA DEFINITIVA PARA MANTER O JOGADOR EM PÉ
-        // Esta nova abordagem força a rotação do corpo físico para ficar sempre reta,
-        // impedindo que ele tombe, não importa as colisões ou forças aplicadas.
+        // CORREÇÃO DEFINITIVA PARA MANTER O JOGADOR EM PÉ
+        // A função .setRotation não existe. A forma correta é manipular
+        // o `rotationQuaternion` da malha (mesh) do jogador. A física seguirá essa rotação.
         // =========================================================================
-        if (isPlayerAlive && player.physicsImpostor) {
-            // Cria um "quaternion" (uma forma de representar rotação) que não tem inclinação para os lados.
-            // Usamos a rotação Y do modelo (a malha) para que ele continue virando de acordo com o movimento,
-            // mas forçamos a rotação X e Z (a inclinação) para ser zero.
-            const newRotation = BABYLON.Quaternion.FromEulerAngles(0, player.rotation.y, 0);
+        if (isPlayerAlive && player.physicsImpostor && player.rotationQuaternion) {
+            // Pega a rotação atual em formato de ângulos (pitch, yaw, roll)
+            const eulerRotation = player.rotationQuaternion.toEulerAngles();
+
+            // Mantém a rotação em Y (para onde o personagem está virado), mas zera a inclinação em X e Z.
+            const correctedQuaternion = BABYLON.Quaternion.FromEulerAngles(0, eulerRotation.y, 0);
+
+            // Aplica a rotação corrigida de volta ao objeto.
+            player.rotationQuaternion = correctedQuaternion;
             
-            // Aplica essa rotação "correta" diretamente ao corpo físico.
-            player.physicsImpostor.setAngularVelocity(BABYLON.Vector3.Zero()); // Zera qualquer força de giro
-            player.physicsImpostor.setRotation(newRotation);
+            // Também é bom zerar a velocidade angular para garantir que ele pare de tombar.
+            player.physicsImpostor.setAngularVelocity(BABYLON.Vector3.Zero());
         }
     });
 
@@ -107,7 +110,7 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
     
     function playerDied(player, sounds, onHudUpdate) {
         if (!isPlayerAlive) return;
-        isPlayerAlive = false; // Isso irá parar a lógica que o mantém em pé, permitindo que ele caia
+        isPlayerAlive = false;
         sounds.playerFall.play();
         onHudUpdate("VOCÊ FOI ELIMINADO!", "Espere a próxima rodada");
     }
@@ -120,8 +123,7 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
         }
         
         player.position = new BABYLON.Vector3(0, 15, 0);
-        player.rotation = new BABYLON.Vector3(0, 0, 0); // Reseta a rotação da malha
-        // Reseta a rotação do corpo físico também
+        player.rotation = new BABYLON.Vector3(0, 0, 0);
         player.rotationQuaternion = BABYLON.Quaternion.Identity(); 
         
         player.physicsImpostor = new BABYLON.PhysicsImpostor(player, BABYLON.PhysicsImpostor.CapsuleImpostor, { mass: 1, restitution: 0.1, friction: 0.5 }, scene);
@@ -140,7 +142,6 @@ function createPlayer(scene) {
     const player = BABYLON.MeshBuilder.CreateCapsule("player", { height: 2, radius: 0.5 }, scene);
     player.position = new BABYLON.Vector3(0, 15, 0);
     
-    // É importante usar um Quaternion para rotação quando se trabalha com física para evitar problemas
     player.rotationQuaternion = new BABYLON.Quaternion();
     
     const playerMaterial = new BABYLON.StandardMaterial("playerMat", scene);
