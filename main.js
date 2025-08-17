@@ -1,16 +1,13 @@
-// =======================================================
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // SEÇÃO 1: CONSOLE DE DEPURAÇÃO MOBILE
 // Esta seção cria um console visual dentro da própria página.
 // Ele captura todas as mensagens de console.log, console.error, etc.,
 // e as exibe na tela, permitindo que você veja os erros no celular.
 // Esta é uma função auto-invocada (IIFE) para não poluir o escopo global.
-// =======================================================
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 (function setupMobileConsole() {
-    const trigger = document.getElementById('debug-trigger');
     const consoleContainer = document.getElementById('mobile-console');
     const logContainer = document.getElementById('console-log-container');
-    const closeBtn = document.getElementById('console-close');
-    const clearBtn = document.getElementById('console-clear');
 
     // Função interna para adicionar uma mensagem formatada ao console visual
     function logToScreen(message, type = 'log') {
@@ -52,21 +49,18 @@
         return true; // Impede que o erro padrão apareça no console do navegador
     };
 
-    // Adiciona os eventos para os botões do console
-    trigger.addEventListener('click', () => consoleContainer.classList.toggle('hidden'));
-    closeBtn.addEventListener('click', () => consoleContainer.classList.add('hidden'));
-    clearBtn.addEventListener('click', () => logContainer.innerHTML = '');
+    // Os eventos de clique para os botões do console serão adicionados mais tarde,
+    // quando o DOM estiver totalmente carregado, para garantir que funcionem.
 
-    console.log("Console de depuração iniciado. Clique no ícone de bug para abrir/fechar.");
+    console.log("Console de depuração iniciado.");
 })();
 
 
-// =======================================================
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // SEÇÃO 2: GERENCIADOR DE ÁUDIO (usando Howler.js)
 // Centralizamos todos os nossos sons em um único objeto para fácil acesso.
-// =======================================================
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 const sounds = {
-    // Usamos URLs de um CDN para os sons, para que funcionem online sem precisar de arquivos locais.
     click: new Howl({ src: ['https://cdn.jsdelivr.net/gh/scifilef/hosted-assets/menu-click.wav'] }),
     music: new Howl({
         src: ['https://cdn.jsdelivr.net/gh/scifilef/hosted-assets/pleasant-music.mp3'],
@@ -77,10 +71,10 @@ const sounds = {
 };
 
 
-// =======================================================
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // SEÇÃO 3: ESTADO CENTRAL E FUNÇÕES DE UI
 // Esta seção define o estado da nossa aplicação e as funções que geram o HTML.
-// =======================================================
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 // O "cérebro" da aplicação. Guarda todas as informações importantes.
 const gameState = {
@@ -100,7 +94,6 @@ const availableGames = [
         rating: 91,
         players: 12.2
     }
-    // Quando você criar um novo jogo, basta adicioná-lo aqui.
 ];
 
 // Funções que geram blocos de HTML (simulando "componentes")
@@ -159,15 +152,14 @@ function createHudHTML() {
 }
 
 
-// =======================================================
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // SEÇÃO 4: LÓGICA PRINCIPAL DA APLICAÇÃO
 // Gerencia a renderização da UI e a inicialização do jogo.
-// =======================================================
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 const appContainer = document.getElementById('app');
 const canvas = document.getElementById('renderCanvas');
 const joystickZone = document.getElementById('joystickZone');
 
-// Variáveis globais para o motor e o controle do jogador
 let engine;
 let player;
 let moveX = 0;
@@ -187,16 +179,12 @@ function render() {
                 </main>
             </div>
         `;
-        // Animação GSAP para o menu aparecer suavemente
         gsap.from(".roblox-container", { duration: 0.5, opacity: 0 });
-
     } else if (gameState.currentScreen === 'playing') {
         canvas.classList.remove('hidden');
         joystickZone.classList.remove('hidden');
         appContainer.innerHTML = createHudHTML();
-        // Animação GSAP para o HUD "nascer" na tela
         gsap.from(".hud-container", { duration: 0.5, y: -50, opacity: 0, ease: "back.out(1.7)" });
-
     } else if (gameState.currentScreen === 'loading') {
         appContainer.innerHTML = `<div class="roblox-container"><h1>Carregando Jogo...</h1></div>`;
     }
@@ -225,7 +213,7 @@ function setupJoystick() {
 
     manager.on('move', (event, data) => {
         const angle = data.angle.radian;
-        const force = Math.min(data.force, 2); // Limita a força para não ser excessiva
+        const force = Math.min(data.force, 2);
         moveZ = Math.cos(angle) * force;
         moveX = Math.sin(angle) * force;
     });
@@ -236,8 +224,7 @@ function setupJoystick() {
     });
 }
 
-
-// Função que gerencia a transição do menu para o jogo 3D.
+// Função que gerencia a transição do menu para o jogo 3D, com mais logs para depuração.
 async function launchGame(gameId) {
     gameState.currentScreen = 'loading';
     render();
@@ -247,23 +234,29 @@ async function launchGame(gameId) {
         opacity: 0,
         onComplete: async () => {
             try {
-                console.log("Iniciando motor de jogo...");
+                console.log("PASSO 1: Iniciando motor de jogo...");
                 if (!engine) {
                     engine = new BABYLON.Engine(canvas, true);
+                    console.log("Motor Babylon.js criado com sucesso.");
                 }
 
-                console.log("Iniciando jogo: 'Sobreviva ao Desastre'...");
-                
+                console.log("PASSO 2: Chamando startDisasterGame...");
                 const gameData = await startDisasterGame(engine, canvas, updateHud, sounds);
-                const scene = gameData.scene;
-                player = gameData.player; // Armazena a referência do jogador
 
-                if (!scene || !player) {
-                    throw new Error("A cena ou o jogador não foram criados corretamente.");
+                // VERIFICAÇÃO CRÍTICA: Garante que o jogo retornou os dados necessários.
+                if (!gameData || !gameData.scene || !gameData.player) {
+                    throw new Error("A função startDisasterGame não retornou a cena ou o jogador.");
                 }
+                
+                const scene = gameData.scene;
+                player = gameData.player;
+                console.log("PASSO 3: Cena e jogador recebidos com sucesso.");
 
+                console.log("PASSO 4: Configurando o joystick...");
                 setupJoystick();
+                console.log("Joystick configurado.");
 
+                console.log("PASSO 5: Iniciando o loop de renderização...");
                 engine.runRenderLoop(() => {
                     if (gameState.currentScreen === 'playing' && player && player.physicsImpostor) {
                         const playerSpeed = 7.5;
@@ -282,45 +275,57 @@ async function launchGame(gameId) {
                     engine.resize();
                 });
 
-                console.log("Jogo carregado com sucesso!");
+                console.log("PASSO 6: Jogo carregado com sucesso! Mudando para a tela 'playing'.");
                 gameState.currentScreen = 'playing';
                 sounds.music.play();
                 render();
 
             } catch (error) {
+                // Se qualquer um dos passos acima falhar, o erro será exibido aqui
                 console.error("FALHA CRÍTICA AO INICIAR O JOGO:", error.message, error.stack);
-                gameState.currentScreen = 'menu';
+                gameState.currentScreen = 'menu'; // Volta para o menu para não travar
                 render();
             }
         }
     });
 }
 
-// =======================================================
-// SEÇÃO 5: EVENT LISTENERS
-// Ouve as ações do usuário e dispara a lógica correspondente.
-// =======================================================
-appContainer.addEventListener('click', (event) => {
-    const gameCard = event.target.closest('.game-card');
-    if (gameCard) {
-        sounds.click.play();
-        gsap.to(gameCard, { 
-            scale: 0.95, 
-            yoyo: true, 
-            repeat: 1, 
-            duration: 0.1, 
-            onComplete: () => {
-                const gameId = gameCard.dataset.gameId;
-                if (gameId) {
-                    launchGame(gameId);
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// SEÇÃO 5: INICIALIZAÇÃO E EVENT LISTENERS
+// Esperamos o DOM estar completamente carregado para adicionar os eventos.
+// Isso garante que os botões e outros elementos existam antes de tentarmos manipulá-los.
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+document.addEventListener('DOMContentLoaded', () => {
+    
+    // Adiciona o listener de clique para o container de jogos (que é recriado a cada render)
+    appContainer.addEventListener('click', (event) => {
+        const gameCard = event.target.closest('.game-card');
+        if (gameCard) {
+            sounds.click.play();
+            gsap.to(gameCard, {
+                scale: 0.95, yoyo: true, repeat: 1, duration: 0.1,
+                onComplete: () => {
+                    const gameId = gameCard.dataset.gameId;
+                    if (gameId) {
+                        launchGame(gameId);
+                    }
                 }
-            }
-        });
-    }
-});
+            });
+        }
+    });
 
-// =======================================================
-// INICIALIZAÇÃO
-// =======================================================
-// Chama a função render pela primeira vez para desenhar a tela inicial do menu.
-render();
+    // Adiciona os listeners para os botões do console (que existem desde o início e não são recriados)
+    const consoleContainer = document.getElementById('mobile-console');
+    document.getElementById('debug-trigger').addEventListener('click', () => {
+        consoleContainer.classList.toggle('hidden');
+    });
+    document.getElementById('console-close').addEventListener('click', () => {
+        consoleContainer.classList.add('hidden');
+    });
+    document.getElementById('console-clear').addEventListener('click', () => {
+        document.getElementById('console-log-container').innerHTML = '';
+    });
+
+    // Chama a função render pela primeira vez para desenhar a tela inicial do menu.
+    render();
+});
