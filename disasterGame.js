@@ -3,7 +3,6 @@
 // Estas variáveis guardam referências importantes para os objetos do jogo
 // que precisam ser acessados por múltiplas funções.
 // =======================================================
-let player; // Armazena a malha (mesh) do jogador
 let isPlayerAlive = true; // Controla se o jogador está vivo ou morto na rodada atual
 let lava; // Armazena a malha (mesh) da lava quando ela existir
 
