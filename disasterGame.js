@@ -1,57 +1,56 @@
 // =======================================================
 // VARIÁVEIS GLOBAIS DO JOGO DE DESASTRE
-// Estas variáveis guardam referências importantes para os objetos do jogo
-// que precisam ser acessados por múltiplas funções.
 // =======================================================
-let isPlayerAlive = true; // Controla se o jogador está vivo ou morto na rodada atual
-let lava; // Armazena a malha (mesh) da lava quando ela existir
+let isPlayerAlive = true;
+let lava;
 
 // =======================================================
 // FUNÇÃO PRINCIPAL DO JOGO
-// Esta é a função que o main.js chama para iniciar toda a experiência.
-// Ela é 'async' porque precisa esperar o motor de física carregar.
 // =======================================================
 async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
-    
-    // CORREÇÃO CRÍTICA: Espera o motor de física Ammo.js estar 100% pronto.
-    // Sem isso, tentar criar objetos físicos pode causar um erro e impedir o jogo de carregar.
     await window.Ammo();
     
-    // Cria a cena principal do jogo, que é o container para todos os objetos, luzes e câmeras.
     const scene = new BABYLON.Scene(engine);
     
-    // Configura a física para a cena inteira.
-    const gravityVector = new BABYLON.Vector3(0, -9.81, 0); // Define a gravidade (puxando para baixo no eixo Y)
-    const physicsPlugin = new BABYLON.AmmoJSPlugin(); // Define qual motor de física usar
+    const gravityVector = new BABYLON.Vector3(0, -9.81, 0);
+    const physicsPlugin = new BABYLON.AmmoJSPlugin();
     scene.enablePhysics(gravityVector, physicsPlugin);
 
-    // Cria a iluminação da cena.
     const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
     light.intensity = 1.0;
 
-    // Cria a câmera que seguirá o jogador.
     const camera = new BABYLON.FollowCamera("followCam", new BABYLON.Vector3(0, 15, -25), scene);
 
-    // Chama as funções auxiliares para criar os elementos visuais e físicos do jogo.
     createDisasterMap(scene);
-    createPlayer(scene);
+    // A variável 'player' agora é local para esta função e retornada no final
+    const player = createPlayer(scene);
 
-    // Configura a câmera para travar a mira no jogador e define a distância e altura.
     camera.lockedTarget = player;
     camera.radius = 20;
     camera.heightOffset = 10;
 
-    // Adiciona um observador que roda uma função a cada frame, ANTES de renderizar a cena.
-    // Usamos isso para a lógica de morte do jogador, que precisa ser verificada constantemente.
     scene.onBeforeRenderObservable.add(() => {
-        // Se o jogador está vivo E a lava existe E a posição Y do jogador é menor que a da lava...
+        // Lógica de morte por lava
         if (isPlayerAlive && lava && player.position.y < lava.position.y) {
-            playerDied(); // ...então o jogador morre.
+            playerDied(player, sounds, onHudUpdate); // Passa os parâmetros necessários
+        }
+
+        // =========================================================================
+        // MUDANÇA 1: MANTER O JOGADOR EM PÉ (ENQUANTO VIVO)
+        // Esta é a nova lógica que força o jogador a ficar reto a cada frame.
+        // =========================================================================
+        if (isPlayerAlive && player.physicsImpostor) {
+            // Pega a velocidade de rotação atual
+            const currentAngularVelocity = player.physicsImpostor.getAngularVelocity();
+            // Cria uma nova velocidade de rotação que zera os eixos X e Z, mantendo o eixo Y (para virar no futuro)
+            const correctedAngularVelocity = new BABYLON.Vector3(0, currentAngularVelocity.y, 0);
+            // Aplica a velocidade corrigida, impedindo que ele tombe
+            player.physicsImpostor.setAngularVelocity(correctedAngularVelocity);
         }
     });
 
     // Função que gerencia a intermissão (tempo de preparação)
-    function startIntermission(scene) {
+    function startIntermission() {
         let timeLeft = 15;
         onHudUpdate("Intermissão - Prepare-se!", timeLeft);
         
@@ -59,36 +58,34 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
             timeLeft--;
             onHudUpdate("Intermissão - Prepare-se!", timeLeft);
             if (timeLeft <= 0) {
-                clearInterval(countdown); // Para o contador
-                startLavaDisaster(scene); // Inicia o desastre
+                clearInterval(countdown);
+                startLavaDisaster();
             }
-        }, 1000); // Roda a cada 1 segundo
+        }, 1000);
     }
 
     // Função que inicia o desastre da lava
-    function startLavaDisaster(scene) {
+    function startLavaDisaster() {
         onHudUpdate("A LAVA ESTÁ SUBINDO! SUBA!", "SOBREVIVA!");
         
         lava = BABYLON.MeshBuilder.CreateGround("lava", {width: 500, height: 500}, scene);
-        lava.position.y = -20; // Começa bem abaixo do mapa
+        lava.position.y = -20;
         const lavaMaterial = new BABYLON.StandardMaterial("lavaMat", scene);
-        lavaMaterial.diffuseColor = new BABYLON.Color3(1, 0.2, 0); // Cor vermelha/laranja
-        lavaMaterial.emissiveColor = new BABYLON.Color3(0.8, 0.2, 0); // Faz a lava brilhar
+        lavaMaterial.diffuseColor = new BABYLON.Color3(1, 0.2, 0);
+        lavaMaterial.emissiveColor = new BABYLON.Color3(0.8, 0.2, 0);
         lava.material = lavaMaterial;
 
-        // Adiciona a função de subida da lava ao loop de renderização da cena
         const lavaRise = () => { lava.position.y += 0.03; };
         scene.onBeforeRenderObservable.add(lavaRise);
 
-        // Define um temporizador para o fim do desastre (45 segundos)
         setTimeout(() => {
-            scene.onBeforeRenderObservable.removeCallback(lavaRise); // Para de subir a lava
-            endRound(scene);
+            scene.onBeforeRenderObservable.removeCallback(lavaRise);
+            endRound();
         }, 45000);
     }
 
     // Função chamada quando a rodada acaba
-    function endRound(scene) {
+    function endRound() {
         if (isPlayerAlive) {
             onHudUpdate("Você sobreviveu!", "Aguarde a próxima rodada.");
         } else {
@@ -96,72 +93,79 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
         }
 
         if (lava) {
-            lava.dispose(); // Remove a lava da cena para liberar memória
+            lava.dispose();
             lava = null;
         }
 
-        // Espera 5 segundos antes de começar uma nova rodada
         setTimeout(() => {
-            resetPlayer(scene);
-            startIntermission(scene);
+            resetPlayer(player, scene);
+            startIntermission();
         }, 5000);
-    }
-
-    // Função chamada quando o jogador morre
-    function playerDied() {
-        if (!isPlayerAlive) return; // Garante que a função só rode uma vez por morte
-        isPlayerAlive = false;
-        sounds.playerFall.play(); // Toca o som de morte
-        player.physicsImpostor.dispose(); // Remove o corpo físico para que ele não interaja mais
-        onHudUpdate("VOCÊ FOI ELIMINADO!", "Espere a próxima rodada");
-    }
-
-    // Função para resetar o estado do jogador para uma nova rodada
-    function resetPlayer(scene) {
-        isPlayerAlive = true;
-        player.position = new BABYLON.Vector3(0, 15, 0); // Recoloca o jogador no ponto inicial
-        // Recria o corpo físico do jogador, que foi destruído na morte
-        player.physicsImpostor = new BABYLON.PhysicsImpostor(player, BABYLON.PhysicsImpostor.CapsuleImpostor, { mass: 1, restitution: 0.1, friction: 0.5 }, scene);
     }
     
     // Inicia o primeiro ciclo do jogo
-    startIntermission(scene);
+    startIntermission();
 
-    // MUDANÇA CRUCIAL: Retorna um objeto contendo a cena E o jogador,
-    // para que o main.js possa acessá-los.
     return { scene, player };
 }
 
 // =======================================================
-// FUNÇÕES DE CRIAÇÃO DE OBJETOS
-// Funções auxiliares que mantêm o código principal mais limpo.
+// FUNÇÕES AUXILIARES
 // =======================================================
+
+// Função chamada quando o jogador morre
+function playerDied(player, sounds, onHudUpdate) {
+    if (!isPlayerAlive) return;
+    isPlayerAlive = false;
+    sounds.playerFall.play();
+    onHudUpdate("VOCÊ FOI ELIMINADO!", "Espere a próxima rodada");
+    
+    // =========================================================================
+    // MUDANÇA 2: PERMITIR A QUEDA
+    // Removemos a linha 'player.physicsImpostor.dispose()'.
+    // Ao não remover o corpo físico, ele continuará no mundo e poderá tombar
+    // naturalmente, já que a lógica para mantê-lo em pé (MUDANÇA 1) para de rodar.
+    // =========================================================================
+}
+
+// Função para resetar o estado do jogador para uma nova rodada
+function resetPlayer(player, scene) {
+    isPlayerAlive = true;
+    
+    // Se o corpo físico antigo ainda existir, removemos antes de criar um novo
+    if (player.physicsImpostor) {
+        player.physicsImpostor.dispose();
+    }
+    
+    player.position = new BABYLON.Vector3(0, 15, 0);
+    player.rotation = new BABYLON.Vector3(0, 0, 0); // Garante que ele comece em pé
+    player.physicsImpostor = new BABYLON.PhysicsImpostor(player, BABYLON.PhysicsImpostor.CapsuleImpostor, { mass: 1, restitution: 0.1, friction: 0.5 }, scene);
+    // Não precisamos mais da trava de rotação aqui
+}
 
 // Cria o objeto do jogador
 function createPlayer(scene) {
-    player = BABYLON.MeshBuilder.CreateCapsule("player", { height: 2, radius: 0.5 }, scene);
-    player.position = new BABYLON.Vector3(0, 15, 0); // Posição inicial segura
-    // Define o corpo físico (impostor) para o jogador, permitindo que ele colida e seja afetado pela gravidade
+    const player = BABYLON.MeshBuilder.CreateCapsule("player", { height: 2, radius: 0.5 }, scene);
+    player.position = new BABYLON.Vector3(0, 15, 0);
     player.physicsImpostor = new BABYLON.PhysicsImpostor(player, BABYLON.PhysicsImpostor.CapsuleImpostor, { mass: 1, restitution: 0.1, friction: 0.5 }, scene);
+    // Não precisamos mais da trava de rotação aqui
+    return player;
 }
 
 // Cria o mapa com o chão e as torres
 function createDisasterMap(scene) {
-    // Cria o chão
     const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 100, height: 100 }, scene);
-    ground.physicsImpostor = new BABYLON.PhysicsImpostor(ground, BABYLON.PhysicsImpostor.BoxImpostor, { mass: 0 }, scene); // Massa 0 o torna estático
+    ground.physicsImpostor = new BABYLON.PhysicsImpostor(ground, BABYLON.PhysicsImpostor.BoxImpostor, { mass: 0 }, scene);
 
-    // Cria 15 torres com tamanhos e posições aleatórias usando a biblioteca Lodash
     for (let i = 0; i < 15; i++) {
-        const height = _.random(5.0, 25.0, true); // Altura decimal entre 5 e 25
-        const width = _.random(8, 12);           // Largura inteira entre 8 e 12
-        const depth = _.random(8, 12);           // Profundidade inteira entre 8 e 12
+        const height = _.random(5.0, 25.0, true);
+        const width = _.random(8, 12);
+        const depth = _.random(8, 12);
         
         const tower = BABYLON.MeshBuilder.CreateBox(`tower${i}`, { width, depth, height }, scene);
         tower.position.y = height / 2;
-        tower.position.x = _.random(-45, 45); // Posição X aleatória
-        tower.position.z = _.random(-45, 45); // Posição Z aleatória
-        // Define o corpo físico da torre
+        tower.position.x = _.random(-45, 45);
+        tower.position.z = _.random(-45, 45);
         tower.physicsImpostor = new BABYLON.PhysicsImpostor(tower, BABYLON.PhysicsImpostor.BoxImpostor, { mass: 0 }, scene);
     }
 }
