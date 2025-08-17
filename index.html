@@ -4,42 +4,46 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Sua Plataforma de Jogos</title>
-    <!-- Font Awesome para os ícones -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
-    <!-- Nosso arquivo de estilos -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- O container principal onde nossa aplicação vai renderizar a UI dinamicamente -->
+    <!-- O container principal onde nossa aplicação vai renderizar a UI -->
     <div id="app"></div>
 
-    <!-- Elementos do Jogo que o Babylon precisa encontrar. Começam ocultos. -->
+    <!-- Elementos do Jogo que o Babylon precisa encontrar -->
     <canvas id="renderCanvas" class="hidden"></canvas>
     <div id="joystickZone" class="hidden"></div>
+
+    <!-- FERRAMENTA DE DEBUG: CONSOLE MOBILE -->
+    <div id="debug-trigger"></div> <!-- Botão escondido para abrir o console -->
+    <div id="mobile-console" class="hidden">
+        <div class="console-header">
+            <span>Console de Depuração</span>
+            <button id="console-clear">Limpar</button>
+            <button id="console-close">Fechar</button>
+        </div>
+        <div id="console-log-container"></div>
+    </div>
+
 
     <!-- ======================================================= -->
     <!--                 IMPORTAÇÃO DAS BIBLIOTECAS              -->
     <!-- ======================================================= -->
 
-    <!-- PRIMEIRO, a engine de física (Ammo.js) -->
+    <!-- BIBLIOTECAS DE JOGO (sempre primeiro) -->
     <script src="https://cdn.babylonjs.com/ammo.js"></script>
-
-    <!-- SEGUNDO, a engine de jogo (Babylon.js) -->
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-
-    <!-- TERCEIRO, a biblioteca para o Joystick virtual -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
 
-    <!-- ======================================================= -->
-    <!--                 NOSSOS SCRIPTS DE JOGO                  -->
-    <!-- A ORDEM AQUI É IMPORTANTE!                             -->
-    <!-- ======================================================= -->
+    <!-- BIBLIOTECAS DE MELHORIA -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.5/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
     
-    <!-- A lógica do jogo de desastre -->
+    <!-- NOSSOS SCRIPTS (sempre por último) -->
     <script src="disasterGame.js"></script> 
-    
-    <!-- O script principal que gerencia o estado e a UI -->
     <script src="main.js"></script>
 </body>
 </html>
