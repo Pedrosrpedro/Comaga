@@ -26,8 +26,8 @@
     <!--              FERRAMENTA DE DEPURAÇÃO (CONSOLE)          -->
     <!-- ======================================================= -->
 
-    <!-- Botão visível para abrir/fechar o console -->
-    <div id="debug-trigger">
+    <!-- Botão visível para abrir/fechar o console, com chamada de função onclick -->
+    <div id="debug-trigger" onclick="toggleConsole()">
         <i class="fa-solid fa-bug"></i> <!-- Ícone de "bug" -->
     </div>
     
@@ -35,8 +35,9 @@
     <div id="mobile-console" class="hidden">
         <div class="console-header">
             <span>Console de Depuração</span>
-            <button id="console-clear">Limpar</button>
-            <button id="console-close">Fechar</button>
+            <!-- Botões com chamadas de função onclick -->
+            <button onclick="clearConsole()">Limpar</button>
+            <button onclick="closeConsole()">Fechar</button>
         </div>
         <div id="console-log-container"></div>
     </div>
