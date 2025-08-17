@@ -37,17 +37,13 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
             playerDied(player, sounds, onHudUpdate);
         }
 
-        // =========================================================================
-        // CORREÇÃO DEFINITIVA PARA MANTER O JOGADOR EM PÉ
-        // A função .setRotation não existe. A forma correta é manipular
-        // o `rotationQuaternion` da malha (mesh) do jogador. A física seguirá essa rotação.
-        // =========================================================================
-        if (isPlayerAlive && player.physicsImpostor && player.rotationQuaternion) {
-            // Pega a rotação atual em formato de ângulos (pitch, yaw, roll)
-            const eulerRotation = player.rotationQuaternion.toEulerAngles();
-
-            // Mantém a rotação em Y (para onde o personagem está virado), mas zera a inclinação em X e Z.
-            const correctedQuaternion = BABYLON.Quaternion.FromEulerAngles(0, eulerRotation.y, 0);
+        if (isPlayerAlive && player.physicsImpostor) {
+            // Pega a rotação Y da MALHA (que é controlada pelo main.js para olhar na direção do movimento)
+            const yaw = player.rotation.y;
+            
+            // Cria uma nova rotação que é sempre "em pé" (X e Z zerados), mas
+            // usa a rotação Y correta, fazendo o corpo físico olhar para onde a malha está olhando.
+            const correctedQuaternion = BABYLON.Quaternion.FromEulerAngles(0, yaw, 0);
 
             // Aplica a rotação corrigida de volta ao objeto.
             player.rotationQuaternion = correctedQuaternion;
