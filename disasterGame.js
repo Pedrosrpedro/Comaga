@@ -38,17 +38,25 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
         }
 
         if (isPlayerAlive && player.physicsImpostor) {
-            // Pega a rotação Y da MALHA (que é controlada pelo main.js para olhar na direção do movimento)
-            const yaw = player.rotation.y;
-            
-            // Cria uma nova rotação que é sempre "em pé" (X e Z zerados), mas
-            // usa a rotação Y correta, fazendo o corpo físico olhar para onde a malha está olhando.
-            const correctedQuaternion = BABYLON.Quaternion.FromEulerAngles(0, yaw, 0);
+            // Se o jogador está se movendo (vetor de direção não é zero)
+            // A propriedade `moveDirection` é definida e atualizada pelo main.js
+            if (player.moveDirection && player.moveDirection.lengthSquared() > 0) {
+                // Calcula o ângulo para onde ele deve olhar
+                const targetAngle = Math.atan2(player.moveDirection.x, player.moveDirection.z);
+                
+                // Suaviza a rotação da malha (mesh) para um efeito mais natural
+                const smoothedAngle = BABYLON.Scalar.Lerp(player.rotation.y, targetAngle, 0.2);
+                player.rotation.y = smoothedAngle;
+            }
 
-            // Aplica a rotação corrigida de volta ao objeto.
+            // A lógica para manter em pé agora usa a rotação Y da malha, que acabamos de calcular
+            const yaw = player.rotation.y;
+            const correctedQuaternion = BABYLON.Quaternion.FromEulerAngles(0, yaw, 0);
+            
+            // Aplica a rotação "correta" (sempre em pé) de volta ao objeto.
             player.rotationQuaternion = correctedQuaternion;
             
-            // Também é bom zerar a velocidade angular para garantir que ele pare de tombar.
+            // Zera a velocidade angular para garantir que ele pare de tombar.
             player.physicsImpostor.setAngularVelocity(BABYLON.Vector3.Zero());
         }
     });
