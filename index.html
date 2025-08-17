@@ -4,58 +4,82 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Sua Plataforma de Jogos</title>
+    <!-- Importa a biblioteca de ícones Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <!-- Tela do Menu Principal -->
-    <div id="mainMenu" class="menu-container">
-        <h1>Minha Plataforma</h1>
-        <p>Escolha uma experiência para começar:</p>
-        <div class="games-list">
-            <button class="game-button" data-game="disaster_survival">Sobreviva ao Desastre</button>
-            <button class="game-button" data-game="jogo_aventura">Aventura na Floresta (Legado)</button>
-        </div>
+    <!-- O menu principal agora é a tela inteira, com um layout complexo -->
+    <div id="mainMenu" class="roblox-container">
+        <!-- BARRA DE NAVEGAÇÃO SUPERIOR -->
+        <header class="main-header">
+            <nav class="main-nav">
+                <a href="#" class="nav-item active"><i class="fa-solid fa-house"></i> Home</a>
+                <a href="#" class="nav-item"><i class="fa-solid fa-user-astronaut"></i> Avatar</a>
+                <a href="#" class="nav-item"><i class="fa-solid fa-users"></i> Connect</a>
+            </nav>
+        </header>
+
+        <!-- CONTEÚDO PRINCIPAL -->
+        <main class="main-content">
+            <!-- SEÇÃO DE AMIGOS -->
+            <section class="content-row">
+                <h2>Friends (18)</h2>
+                <div class="friends-list">
+                    <div class="friend-circle">
+                        <i class="fa-solid fa-user-plus"></i>
+                        <span>Add Friends</span>
+                    </div>
+                    <!-- Amigos Fictícios -->
+                    <div class="friend-circle"><img src="https://via.placeholder.com/50/FFFF00/000000?Text=:)" alt="avatar"><span>agomlp</span></div>
+                    <div class="friend-circle"><img src="https://via.placeholder.com/50/FFC0CB/000000?Text=B" alt="avatar"><span>brielynn2019</span></div>
+                    <div class="friend-circle"><img src="https://via.placeholder.com/50/8A2BE2/FFFFFF?Text=E" alt="avatar"><span>ElChunky</span></div>
+                    <div class="friend-circle"><img src="https://via.placeholder.com/50/FFD700/000000?Text=E" alt="avatar"><span>Elizabellasal</span></div>
+                    <div class="friend-circle"><img src="https://via.placeholder.com/50/FFFFFF/000000?Text=E" alt="avatar"><span>emix121424</span></div>
+                </div>
+            </section>
+
+            <!-- SEÇÃO DE JOGOS -->
+            <section class="content-row">
+                <h2>Continue</h2>
+                <div class="games-grid">
+                    <!-- Card do nosso Jogo -->
+                    <div class="game-card" data-game="disaster_survival">
+                        <div class="game-image-placeholder disaster">SOBREVIVA AO DESASTRE</div>
+                        <div class="game-info">
+                            <h3>Natural Disaster Survival</h3>
+                            <div class="game-stats">
+                                <span><i class="fa-solid fa-thumbs-up"></i> 91%</span>
+                                <span><i class="fa-solid fa-users"></i> 12.2K</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Outros jogos fictícios -->
+                    <div class="game-card"><div class="game-image-placeholder doors">DOORS</div><h3>DOORS</h3></div>
+                    <div class="game-card"><div class="game-image-placeholder breakin">BREAK IN 2</div><h3>Break In 2</h3></div>
+                    <div class="game-card"><div class="game-image-placeholder guts">GUTS & BLACKPOWDER</div><h3>Guts & Blackpowder</h3></div>
+                </div>
+            </section>
+        </main>
     </div>
 
-    <!-- HUD do Jogo (inicialmente oculta) -->
+    <!-- Elementos do Jogo (continuam os mesmos, mas ocultos) -->
     <div id="gameHud" class="hud-container hidden">
         <p id="hudMessage">Carregando...</p>
         <p id="hudTimer"></p>
     </div>
-
-    <!-- Canvas onde o jogo 3D será renderizado -->
     <canvas id="renderCanvas" class="hidden"></canvas>
-
-    <!-- Zona para ativar o Joystick em dispositivos móveis -->
     <div id="joystickZone" class="joystick-zone hidden"></div>
 
-    <!-- ======================================================= -->
-    <!--                 IMPORTAÇÃO DAS BIBLIOTECAS              -->
-    <!-- ======================================================= -->
-
-    <!-- PRIMEIRO, a engine de física (Ammo.js) -->
+    <!-- BIBLIOTECAS JS (continuam as mesmas) -->
     <script src="https://cdn.babylonjs.com/ammo.js"></script>
-
-    <!-- SEGUNDO, a engine de jogo (Babylon.js) -->
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
-
-    <!-- Opcional, mas útil: Loaders para importar modelos 3D (glTF, OBJ, etc.) -->
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-
-    <!-- Biblioteca para o Joystick virtual -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
 
-
-    <!-- ======================================================= -->
-    <!--                 NOSSOS SCRIPTS DE JOGO                  -->
-    <!-- ======================================================= -->
-
-    <!-- Script com a lógica do jogo de desastre -->
+    <!-- NOSSOS SCRIPTS (continuam os mesmos) -->
     <script src="disasterGame.js"></script> 
-
-    <!-- Script principal que gerencia o menu e inicia os jogos -->
     <script src="main.js"></script>
-
 </body>
 </html>
