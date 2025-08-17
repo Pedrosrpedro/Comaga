@@ -459,4 +459,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Renderização inicial
     render();
-});```
+});
