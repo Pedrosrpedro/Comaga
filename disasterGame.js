@@ -19,11 +19,9 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
     const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
     light.intensity = 1.0;
 
-    // A câmera agora é uma ArcRotateCamera para dar controle ao jogador
     const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 15, BABYLON.Vector3.Zero(), scene);
     camera.attachControl(canvas, true);
     
-    // Limites da câmera para uma melhor experiência
     camera.lowerRadiusLimit = 5;
     camera.upperRadiusLimit = 30;
     camera.lowerBetaLimit = 0.1;
@@ -33,23 +31,29 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
     const player = createPlayer(scene);
 
     scene.onBeforeRenderObservable.add(() => {
-        // A cada frame, o alvo da câmera é atualizado para a posição do jogador
         camera.target.copyFrom(player.position);
 
-        // Lógica de morte por lava
         if (isPlayerAlive && lava && player.position.y < lava.position.y) {
             playerDied(player, sounds, onHudUpdate);
         }
 
-        // Lógica para manter o jogador em pé
+        // =========================================================================
+        // MUDANÇA CENTRAL: LÓGICA DEFINITIVA PARA MANTER O JOGADOR EM PÉ
+        // Esta nova abordagem força a rotação do corpo físico para ficar sempre reta,
+        // impedindo que ele tombe, não importa as colisões ou forças aplicadas.
+        // =========================================================================
         if (isPlayerAlive && player.physicsImpostor) {
-            const currentAngularVelocity = player.physicsImpostor.getAngularVelocity();
-            const correctedAngularVelocity = new BABYLON.Vector3(0, currentAngularVelocity.y, 0);
-            player.physicsImpostor.setAngularVelocity(correctedAngularVelocity);
+            // Cria um "quaternion" (uma forma de representar rotação) que não tem inclinação para os lados.
+            // Usamos a rotação Y do modelo (a malha) para que ele continue virando de acordo com o movimento,
+            // mas forçamos a rotação X e Z (a inclinação) para ser zero.
+            const newRotation = BABYLON.Quaternion.FromEulerAngles(0, player.rotation.y, 0);
+            
+            // Aplica essa rotação "correta" diretamente ao corpo físico.
+            player.physicsImpostor.setAngularVelocity(BABYLON.Vector3.Zero()); // Zera qualquer força de giro
+            player.physicsImpostor.setRotation(newRotation);
         }
     });
 
-    // Função que gerencia a intermissão (tempo de preparação)
     function startIntermission() {
         let timeLeft = 15;
         onHudUpdate("Intermissão - Prepare-se!", timeLeft);
@@ -64,7 +68,6 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
         }, 1000);
     }
 
-    // Função que inicia o desastre da lava
     function startLavaDisaster() {
         onHudUpdate("A LAVA ESTÁ SUBINDO! SUBA!", "SOBREVIVA!");
         
@@ -84,7 +87,6 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
         }, 45000);
     }
 
-    // Função chamada quando a rodada acaba
     function endRound() {
         if (isPlayerAlive) {
             onHudUpdate("Você sobreviveu!", "Aguarde a próxima rodada.");
@@ -103,15 +105,13 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
         }, 5000);
     }
     
-    // Função chamada quando o jogador morre
     function playerDied(player, sounds, onHudUpdate) {
         if (!isPlayerAlive) return;
-        isPlayerAlive = false;
+        isPlayerAlive = false; // Isso irá parar a lógica que o mantém em pé, permitindo que ele caia
         sounds.playerFall.play();
         onHudUpdate("VOCÊ FOI ELIMINADO!", "Espere a próxima rodada");
     }
 
-    // Função para resetar o estado do jogador para uma nova rodada
     function resetPlayer(player, scene) {
         isPlayerAlive = true;
         
@@ -120,14 +120,15 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
         }
         
         player.position = new BABYLON.Vector3(0, 15, 0);
-        player.rotation = new BABYLON.Vector3(0, 0, 0);
+        player.rotation = new BABYLON.Vector3(0, 0, 0); // Reseta a rotação da malha
+        // Reseta a rotação do corpo físico também
+        player.rotationQuaternion = BABYLON.Quaternion.Identity(); 
+        
         player.physicsImpostor = new BABYLON.PhysicsImpostor(player, BABYLON.PhysicsImpostor.CapsuleImpostor, { mass: 1, restitution: 0.1, friction: 0.5 }, scene);
     }
 
-    // Inicia o primeiro ciclo do jogo
     startIntermission();
 
-    // Retorna a cena e o jogador para o main.js poder controlá-los
     return { scene, player };
 }
 
@@ -138,6 +139,9 @@ async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
 function createPlayer(scene) {
     const player = BABYLON.MeshBuilder.CreateCapsule("player", { height: 2, radius: 0.5 }, scene);
     player.position = new BABYLON.Vector3(0, 15, 0);
+    
+    // É importante usar um Quaternion para rotação quando se trabalha com física para evitar problemas
+    player.rotationQuaternion = new BABYLON.Quaternion();
     
     const playerMaterial = new BABYLON.StandardMaterial("playerMat", scene);
     const savedTexture = localStorage.getItem("playerAvatarTexture");
