@@ -88,13 +88,16 @@ const availableGames = [
     { id: 'disaster_survival', displayName: 'SOBREVIVA AO DESASTRE', name: 'Natural Disaster Survival', rating: 91, players: 12.2 }
 ];
 
+// Em main.js
+
 function createHeaderHTML() {
     return `
         <header class="main-header">
             <nav class="main-nav">
-                <a href="#" class="nav-item active"><i class="fa-solid fa-house"></i> Home</a>
-                <a href="#" class="nav-item"><i class="fa-solid fa-user-astronaut"></i> Avatar</a>
-                <a href="#" class="nav-item"><i class="fa-solid fa-users"></i> Connect</a>
+                <a href="#" class="nav-item active" data-nav="home"><i class="fa-solid fa-house"></i> Home</a>
+                <a href="#" class="nav-item" data-nav="avatar"><i class="fa-solid fa-user-astronaut"></i> Avatar</a>
+                <!-- Botão antigo 'Connect' agora virou 'Multiplayer' e vai iniciar o matchmaking -->
+                <a href="#" class="nav-item" data-nav="multiplayer"><i class="fa-solid fa-users"></i> Multiplayer</a>
             </nav>
         </header>
     `;
