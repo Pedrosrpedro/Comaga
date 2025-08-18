@@ -195,13 +195,13 @@ const appContainer = document.getElementById('app');
 const canvas = document.getElementById('renderCanvas');
 const joystickZone = document.getElementById('joystickZone');
 let engine;
+let currentScene = null; // <<<===== VARIÁVEL GLOBAL PARA A CENA
 let player;
 let opponent = null;
 let ball = null;
 let isHost = false;
 let moveX = 0;
 let moveZ = 0;
-let isGameLoading = false; // A NOSSA TRAVA DE SEGURANÇA
 
 // =======================================================
 // LÓGICA DE MULTIPLAYER (CÓPIA DE ID)
@@ -244,16 +244,9 @@ function setupConnectionEvents() {
             return;
         }
 
-        // O "PORTEIRO" ENTRA EM AÇÃO AQUI
-        // Se o jogo está carregando, qualquer outra mensagem é ignorada.
-        if (isGameLoading) {
-            console.warn(`Mensagem '${data.type}' ignorada pois o jogo está carregando.`);
-            return;
-        }
-
-        const scene = engine ? engine.getScene() : null;
+        // <<<===== CORREÇÃO: Usamos nossa variável global 'currentScene'
+        const scene = currentScene;
         if (!scene) {
-            // Se não houver cena, mesmo sem estar carregando, não há o que fazer.
             return;
         }
         
@@ -295,7 +288,8 @@ function setupConnectionEvents() {
         if (gameState.currentScreen.startsWith('playing')) {
             if (engine) {
                 engine.stopRenderLoop();
-                engine.getScene()?.dispose();
+                currentScene?.dispose(); // <<<===== CORREÇÃO: Limpa a cena
+                currentScene = null;
             }
             gameState.currentScreen = 'menu';
             render();
@@ -364,7 +358,6 @@ function setupJoystick() {
 }
 
 async function launchGame(gameId) {
-    isGameLoading = true; // TRAVA ATIVADA
     gameState.score = { blue: 0, red: 0 };
     opponent = null;
     ball = null;
@@ -373,7 +366,8 @@ async function launchGame(gameId) {
 
     if (engine) {
         engine.stopRenderLoop();
-        engine.getScene()?.dispose();
+        currentScene?.dispose(); // <<<===== CORREÇÃO: Limpa a cena anterior
+        currentScene = null;
     }
 
     try {
@@ -404,6 +398,7 @@ async function launchGame(gameId) {
         }
         
         const scene = gameData.scene;
+        currentScene = scene; // <<<===== CORREÇÃO: Guarda a cena na variável global
         player = gameData.player;
         player.moveDirection = new BABYLON.Vector3(0, 0, 0);
         
@@ -473,8 +468,6 @@ async function launchGame(gameId) {
         console.error("FALHA CRÍTICA AO INICIAR O JOGO:", error);
         gameState.currentScreen = 'menu';
         render();
-    } finally {
-        isGameLoading = false; // TRAVA DESATIVADA, INDEPENDENTE DE SUCESSO OU FALHA
     }
 }
 
@@ -484,7 +477,8 @@ async function launchAvatarEditor() {
 
     if (engine) {
         engine.stopRenderLoop();
-        engine.getScene()?.dispose();
+        currentScene?.dispose(); // <<<===== CORREÇÃO: Limpa a cena
+        currentScene = null;
     }
 
     try {
@@ -493,6 +487,7 @@ async function launchAvatarEditor() {
         }
         
         const editorData = await startAvatarEditor(engine, canvas);
+        currentScene = editorData.scene; // <<<===== CORREÇÃO: Guarda a cena do editor
         gameState.editor.scene = editorData.scene;
         gameState.editor.avatar = editorData.avatar;
         gameState.editor.texture = editorData.texture;
@@ -553,7 +548,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (navAction === "home") {
                  if (engine) {
                     engine.stopRenderLoop();
-                    engine.getScene()?.dispose();
+                    currentScene?.dispose(); // <<<===== CORREÇÃO: Limpa a cena
+                    currentScene = null;
                 }
                  gameState.currentScreen = 'menu';
                  render();
@@ -587,7 +583,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (backBtn) {
                 if (engine) {
                     engine.stopRenderLoop();
-                    engine.getScene()?.dispose();
+                    currentScene?.dispose(); // <<<===== CORREÇÃO: Limpa a cena
+                    currentScene = null;
                 }
                 gameState.currentScreen = 'menu';
                 render();
