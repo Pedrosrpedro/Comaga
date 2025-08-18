@@ -1,5 +1,5 @@
 // =======================================================
-// SEÇÃO 1: FUNÇÕES GLOBAIS DO CONSOLE
+// SEÇÃO 1: FUNÇÕES GLOBAIS DE UI (CONSOLE E CONEXÃO)
 // =======================================================
 function toggleConsole() {
     document.getElementById('mobile-console').classList.toggle('hidden');
@@ -9,6 +9,14 @@ function closeConsole() {
 }
 function clearConsole() {
     document.getElementById('console-log-container').innerHTML = '';
+}
+
+// Novas funções para a UI de Conexão
+function toggleConnectionUI() {
+    document.getElementById('connection-ui').classList.toggle('hidden');
+}
+function closeConnectionUI() {
+    document.getElementById('connection-ui').classList.add('hidden');
 }
 
 
@@ -227,16 +235,21 @@ function setupConnectionEvents() {
     currentConnection.on('open', () => {
         console.log("CONEXÃO P2P ESTABELECIDA!");
         alert("Conectado! Escolha um jogo para começar a partida.");
+        closeConnectionUI(); // Fecha o painel após conectar
     });
 
     currentConnection.on('data', (data) => {
         const scene = engine ? engine.getScene() : null;
-        if (!scene) return;
-
+        
         if (data.type === 'start_game') {
+            // Apenas o Peer vai receber essa mensagem, então é seguro chamar launchGame aqui
             launchGame(data.gameId);
+            return; // Evita processar outras mensagens desnecessariamente
         }
-        else if (data.type === 'ready' && !opponent) {
+
+        if (!scene) return; // Garante que a cena existe para as mensagens de update
+
+        if (data.type === 'ready' && !opponent) {
             console.log("Oponente está pronto. Criando seu personagem.");
             opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
             opponent.rotationQuaternion = new BABYLON.Quaternion();
@@ -335,10 +348,8 @@ function setupJoystick() {
 }
 
 async function launchGame(gameId) {
-    if (currentConnection && isHost) {
-        currentConnection.send({ type: 'start_game', gameId: gameId });
-    }
-
+    // Esta função agora é chamada de forma segura tanto pelo Host (via clique) quanto pelo Peer (via mensagem)
+    
     gameState.score = { blue: 0, red: 0 };
     opponent = null;
     ball = null;
@@ -504,14 +515,27 @@ document.addEventListener('DOMContentLoaded', () => {
         const gameCard = target.closest('.game-card');
         const navItem = target.closest('.nav-item');
 
+        // ========= INÍCIO DA CORREÇÃO =========
         if (gameCard) {
             const gameId = gameCard.dataset.gameId;
-            if (currentConnection && currentConnection.open && isHost) {
-                currentConnection.send({ type: 'start_game', gameId: gameId });
+
+            // Se estamos conectados com alguém
+            if (currentConnection && currentConnection.open) {
+                if (isHost) {
+                    // Se eu sou o Host, eu envio o comando e inicio o jogo para mim.
+                    currentConnection.send({ type: 'start_game', gameId: gameId });
+                    launchGame(gameId);
+                } else {
+                    // Se eu NÃO sou o Host, eu não posso iniciar o jogo. Apenas aviso.
+                    alert("Apenas o Host (o jogador que recebeu a conexão) pode iniciar o jogo.");
+                }
+            } else {
+                // Se não há conexão (single-player), apenas inicio o jogo normalmente.
+                launchGame(gameId);
             }
-            launchGame(gameId);
             return;
         }
+        // ========= FIM DA CORREÇÃO =========
         
         if (navItem) {
             const navAction = navItem.dataset.nav;
