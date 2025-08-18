@@ -180,6 +180,7 @@ const canvas = document.getElementById('renderCanvas');
 const joystickZone = document.getElementById('joystickZone');
 let engine;
 let player;
+let opponent = null;
 let moveX = 0;
 let moveZ = 0;
 
@@ -195,7 +196,6 @@ let currentConnection;
 let pollingInterval = null;
 let isSearching = false;
 
-// Função para ler os dados da "fila" de matchmaking no JSONBin
 async function readBin() {
     const response = await fetch(JSONBIN_URL, {
         method: 'GET',
@@ -207,7 +207,6 @@ async function readBin() {
     return data.record;
 }
 
-// Função para escrever (atualizar) os dados da "fila"
 async function writeBin(data) {
     await fetch(JSONBIN_URL, {
         method: 'PUT',
@@ -220,7 +219,6 @@ async function writeBin(data) {
 }
 
 function initializePeer() {
-    // A biblioteca peer.js precisa estar carregada no index.html
     if (typeof Peer === 'undefined') {
         console.error("PeerJS não foi carregado. Verifique o seu index.html.");
         alert("Erro: a biblioteca de multiplayer não foi encontrada.");
@@ -256,29 +254,21 @@ async function startMatchmaking() {
     try {
         const binData = await readBin();
         let playersWaiting = binData.players_waiting || [];
-
-        // Encontra o primeiro jogador na fila que não seja eu mesmo
         const opponentId = playersWaiting.find(id => id !== peer.id);
 
         if (opponentId) {
             alert(`Partida encontrada com ${opponentId}! Conectando...`);
-            // Remove o oponente da lista para que mais ninguém se conecte a ele
             const updatedList = playersWaiting.filter(id => id !== opponentId);
             await writeBin({ players_waiting: updatedList });
-            
-            // Inicia a conexão com o oponente
             currentConnection = peer.connect(opponentId);
             setupConnectionEvents();
-
         } else {
             alert("Nenhum jogador encontrado. Entrando na fila de espera...");
-            // Adiciona meu ID na lista se eu já não estiver lá
             if (!playersWaiting.includes(peer.id)) {
                 playersWaiting.push(peer.id);
                 await writeBin({ players_waiting: playersWaiting });
             }
-            
-            pollingInterval = setInterval(pollForMatch, 5000); // Verifica a cada 5 segundos
+            pollingInterval = setInterval(pollForMatch, 5000);
         }
     } catch (error) {
         console.error("Erro no matchmaking:", error);
@@ -290,12 +280,10 @@ async function startMatchmaking() {
 async function pollForMatch() {
     console.log("Verificando se fomos encontrados...");
     const binData = await readBin();
-    // Se nosso ID não está mais na lista, significa que alguém nos pegou!
     if (peer && !binData.players_waiting.includes(peer.id)) {
         alert("Um jogador se conectou a você!");
         clearInterval(pollingInterval);
         isSearching = false;
-        // Agora só esperamos o evento `peer.on('connection')` ser ativado.
     }
 }
 
@@ -304,19 +292,52 @@ function setupConnectionEvents() {
     isSearching = false;
 
     currentConnection.on('open', () => {
-        alert("Conexão estabelecida com sucesso! O jogo multiplayer pode começar.");
-        // A partir daqui, você pode começar a enviar dados do jogo
-        // Ex: currentConnection.send({ type: 'position', data: player.position });
+        alert("Conexão estabelecida! O jogo vai começar.");
+        
+        launchGame('disaster_survival').then(() => {
+            const myTexture = localStorage.getItem("playerAvatarTexture");
+            currentConnection.send({ type: 'ready', texture: myTexture });
+        });
     });
 
     currentConnection.on('data', (data) => {
-        // Lógica para receber dados do outro jogador
-        console.log("Recebeu dados do oponente:", data);
-        // Ex: if (data.type === 'position') { /* atualiza posição do outro jogador */ }
+        const scene = engine.getScene();
+        if (!scene) return;
+
+        if (data.type === 'ready') {
+            if (!opponent) {
+                opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
+                opponent.rotationQuaternion = new BABYLON.Quaternion();
+                const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
+                
+                if(data.texture) {
+                    const texture = new BABYLON.Texture(data.texture, scene);
+                    opponentMaterial.diffuseTexture = texture;
+                } else {
+                    opponentMaterial.diffuseColor = new BABYLON.Color3.FromHexString("#ff0000");
+                }
+                opponent.material = opponentMaterial;
+
+                const myTexture = localStorage.getItem("playerAvatarTexture");
+                currentConnection.send({ type: 'ready', texture: myTexture });
+            }
+        }
+        
+        else if (data.type === 'update' && opponent) {
+            const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
+            opponent.position = BABYLON.Vector3.Lerp(opponent.position, targetPos, 0.2);
+
+            const targetRot = new BABYLON.Quaternion(data.rot._x, data.rot._y, data.rot._z, data.rot._w);
+            opponent.rotationQuaternion = BABYLON.Quaternion.Slerp(opponent.rotationQuaternion, targetRot, 0.2);
+        }
     });
 
     currentConnection.on('close', () => {
         alert("O outro jogador desconectou.");
+        if (opponent) {
+            opponent.dispose();
+            opponent = null;
+        }
         currentConnection = null;
     });
 }
@@ -392,6 +413,11 @@ async function launchGame(gameId) {
     render();
     stopAvatarEditor(engine);
 
+    if (engine) {
+        engine.stopRenderLoop();
+        engine.getScene()?.dispose();
+    }
+
     gsap.to(".roblox-container", {
         duration: 0.5,
         opacity: 0,
@@ -409,12 +435,15 @@ async function launchGame(gameId) {
                 const scene = gameData.scene;
                 player = gameData.player;
                 
-                // Anexa um vetor de direção ao jogador para compartilhar com disasterGame.js
                 player.moveDirection = new BABYLON.Vector3(0, 0, 0);
 
                 setupJoystick();
                 
+                let lastSentTime = 0;
+
                 engine.runRenderLoop(() => {
+                    const now = Date.now();
+                    
                     if (gameState.currentScreen === 'playing' && player && player.physicsImpostor) {
                         const camera = scene.activeCamera;
                         const playerSpeed = 7.5;
@@ -451,15 +480,22 @@ async function launchGame(gameId) {
 
                         if (moveDirection.lengthSquared() > 0) {
                             moveDirection.normalize();
-                            // Atualiza o vetor de direção no jogador para o disasterGame.js usar
                             player.moveDirection.copyFrom(moveDirection);
                             
                             const newVelocity = moveDirection.scale(playerSpeed);
                             player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVelocity.x, currentVelocity.y, newVelocity.z));
                         } else {
-                            // Zera a direção se parado
                             player.moveDirection.set(0, 0, 0); 
                             player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
+                        }
+                        
+                        if (currentConnection && currentConnection.open && now - lastSentTime > 100) {
+                            currentConnection.send({
+                                type: 'update',
+                                pos: player.position,
+                                rot: player.rotationQuaternion
+                            });
+                            lastSentTime = now;
                         }
                     }
                     if(scene && scene.isReady()) scene.render();
@@ -516,7 +552,7 @@ async function launchAvatarEditor() {
 // SEÇÃO 6: INICIALIZAÇÃO E EVENT LISTENERS
 // =======================================================
 document.addEventListener('DOMContentLoaded', () => {
-    initializePeer(); // Inicia o PeerJS assim que a página carrega
+    initializePeer();
 
     appContainer.addEventListener('click', (event) => {
         const target = event.target;
