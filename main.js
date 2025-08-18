@@ -88,15 +88,12 @@ const availableGames = [
     { id: 'disaster_survival', displayName: 'SOBREVIVA AO DESASTRE', name: 'Natural Disaster Survival', rating: 91, players: 12.2 }
 ];
 
-// Em main.js
-
 function createHeaderHTML() {
     return `
         <header class="main-header">
             <nav class="main-nav">
                 <a href="#" class="nav-item active" data-nav="home"><i class="fa-solid fa-house"></i> Home</a>
                 <a href="#" class="nav-item" data-nav="avatar"><i class="fa-solid fa-user-astronaut"></i> Avatar</a>
-                <!-- Botão antigo 'Connect' agora virou 'Multiplayer' e vai iniciar o matchmaking -->
                 <a href="#" class="nav-item" data-nav="multiplayer"><i class="fa-solid fa-users"></i> Multiplayer</a>
             </nav>
         </header>
@@ -186,6 +183,145 @@ let player;
 let moveX = 0;
 let moveZ = 0;
 
+// =======================================================
+// CONFIGURAÇÃO DO JSONBIN.IO E MATCHMAKING
+// =======================================================
+const JSONBIN_API_KEY = '$2a$10$4tbHfolQwMBQAiybZXK0ruCq0xYIPmFuq8NMAqrP89muVvvgQavta'; // <<-- COLOQUE SUA API KEY AQUI
+const JSONBIN_BIN_ID = '68a26a8ed0ea881f405bf280';       // <<-- COLOQUE SEU BIN ID AQUI
+const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`;
+
+let peer;
+let currentConnection;
+let pollingInterval = null;
+let isSearching = false;
+
+// Função para ler os dados da "fila" de matchmaking no JSONBin
+async function readBin() {
+    const response = await fetch(JSONBIN_URL, {
+        method: 'GET',
+        headers: {
+            'X-Master-Key': JSONBIN_API_KEY
+        }
+    });
+    const data = await response.json();
+    return data.record;
+}
+
+// Função para escrever (atualizar) os dados da "fila"
+async function writeBin(data) {
+    await fetch(JSONBIN_URL, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Master-Key': JSONBIN_API_KEY
+        },
+        body: JSON.stringify(data)
+    });
+}
+
+function initializePeer() {
+    // A biblioteca peer.js precisa estar carregada no index.html
+    if (typeof Peer === 'undefined') {
+        console.error("PeerJS não foi carregado. Verifique o seu index.html.");
+        alert("Erro: a biblioteca de multiplayer não foi encontrada.");
+        return;
+    }
+
+    peer = new Peer();
+    peer.on('open', (id) => {
+        console.log("Conectado ao servidor PeerJS com o ID:", id);
+    });
+    
+    peer.on('connection', (conn) => {
+        console.log("Recebi uma conexão de um oponente!");
+        currentConnection = conn;
+        setupConnectionEvents();
+    });
+
+    peer.on('error', (err) => {
+        console.error("Erro no PeerJS:", err);
+        alert(`Erro de conexão multiplayer: ${err.type}`);
+        isSearching = false;
+        if(pollingInterval) clearInterval(pollingInterval);
+    });
+}
+
+async function startMatchmaking() {
+    if (isSearching || currentConnection) return alert("Você já está procurando ou conectado.");
+    if (!peer || !peer.id) return alert("Aguarde a conexão com o servidor PeerJS... Tente novamente em alguns segundos.");
+
+    isSearching = true;
+    alert("Procurando outro jogador...");
+
+    try {
+        const binData = await readBin();
+        let playersWaiting = binData.players_waiting || [];
+
+        // Encontra o primeiro jogador na fila que não seja eu mesmo
+        const opponentId = playersWaiting.find(id => id !== peer.id);
+
+        if (opponentId) {
+            alert(`Partida encontrada com ${opponentId}! Conectando...`);
+            // Remove o oponente da lista para que mais ninguém se conecte a ele
+            const updatedList = playersWaiting.filter(id => id !== opponentId);
+            await writeBin({ players_waiting: updatedList });
+            
+            // Inicia a conexão com o oponente
+            currentConnection = peer.connect(opponentId);
+            setupConnectionEvents();
+
+        } else {
+            alert("Nenhum jogador encontrado. Entrando na fila de espera...");
+            // Adiciona meu ID na lista se eu já não estiver lá
+            if (!playersWaiting.includes(peer.id)) {
+                playersWaiting.push(peer.id);
+                await writeBin({ players_waiting: playersWaiting });
+            }
+            
+            pollingInterval = setInterval(pollForMatch, 5000); // Verifica a cada 5 segundos
+        }
+    } catch (error) {
+        console.error("Erro no matchmaking:", error);
+        alert("Erro ao procurar partida.");
+        isSearching = false;
+    }
+}
+
+async function pollForMatch() {
+    console.log("Verificando se fomos encontrados...");
+    const binData = await readBin();
+    // Se nosso ID não está mais na lista, significa que alguém nos pegou!
+    if (peer && !binData.players_waiting.includes(peer.id)) {
+        alert("Um jogador se conectou a você!");
+        clearInterval(pollingInterval);
+        isSearching = false;
+        // Agora só esperamos o evento `peer.on('connection')` ser ativado.
+    }
+}
+
+function setupConnectionEvents() {
+    if (pollingInterval) clearInterval(pollingInterval);
+    isSearching = false;
+
+    currentConnection.on('open', () => {
+        alert("Conexão estabelecida com sucesso! O jogo multiplayer pode começar.");
+        // A partir daqui, você pode começar a enviar dados do jogo
+        // Ex: currentConnection.send({ type: 'position', data: player.position });
+    });
+
+    currentConnection.on('data', (data) => {
+        // Lógica para receber dados do outro jogador
+        console.log("Recebeu dados do oponente:", data);
+        // Ex: if (data.type === 'position') { /* atualiza posição do outro jogador */ }
+    });
+
+    currentConnection.on('close', () => {
+        alert("O outro jogador desconectou.");
+        currentConnection = null;
+    });
+}
+
+
 const keys = { w: false, a: false, s: false, d: false, ' ': false };
 window.addEventListener('keydown', (event) => {
     const key = event.key.toLowerCase();
@@ -251,8 +387,6 @@ function setupJoystick() {
     });
 }
 
-// Em main.js
-
 async function launchGame(gameId) {
     gameState.currentScreen = 'loading';
     render();
@@ -268,10 +402,14 @@ async function launchGame(gameId) {
                 }
                 const gameData = await startDisasterGame(engine, canvas, updateHud, sounds);
                 
+                if (!gameData || !gameData.scene || !gameData.player) {
+                    throw new Error("A função startDisasterGame não retornou a cena ou o jogador.");
+                }
+                
                 const scene = gameData.scene;
                 player = gameData.player;
                 
-                // Anexa um vetor de direção ao jogador para compartilhar entre os scripts
+                // Anexa um vetor de direção ao jogador para compartilhar com disasterGame.js
                 player.moveDirection = new BABYLON.Vector3(0, 0, 0);
 
                 setupJoystick();
@@ -313,13 +451,14 @@ async function launchGame(gameId) {
 
                         if (moveDirection.lengthSquared() > 0) {
                             moveDirection.normalize();
-                            // ATUALIZA O VETOR DE DIREÇÃO NO JOGADOR
+                            // Atualiza o vetor de direção no jogador para o disasterGame.js usar
                             player.moveDirection.copyFrom(moveDirection);
                             
                             const newVelocity = moveDirection.scale(playerSpeed);
                             player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVelocity.x, currentVelocity.y, newVelocity.z));
                         } else {
-                            player.moveDirection.set(0, 0, 0); // Zera a direção se parado
+                            // Zera a direção se parado
+                            player.moveDirection.set(0, 0, 0); 
                             player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
                         }
                     }
@@ -377,6 +516,8 @@ async function launchAvatarEditor() {
 // SEÇÃO 6: INICIALIZAÇÃO E EVENT LISTENERS
 // =======================================================
 document.addEventListener('DOMContentLoaded', () => {
+    initializePeer(); // Inicia o PeerJS assim que a página carrega
+
     appContainer.addEventListener('click', (event) => {
         const target = event.target;
         const gameCard = target.closest('.game-card');
@@ -392,12 +533,16 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (navItem) {
             sounds.click.play();
-            if (navItem.textContent.includes("Avatar")) {
+            const navAction = navItem.dataset.nav;
+
+            if (navAction === "avatar") {
                 launchAvatarEditor();
-            } else if (navItem.textContent.includes("Home")) {
+            } else if (navAction === "home") {
                  stopAvatarEditor(engine);
                  gameState.currentScreen = 'menu';
                  render();
+            } else if (navAction === "multiplayer") {
+                startMatchmaking();
             }
             return;
         }
@@ -491,6 +636,5 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Renderização inicial
     render();
 });
