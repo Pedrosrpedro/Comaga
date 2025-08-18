@@ -234,20 +234,27 @@ function initializePeer() {
 function setupConnectionEvents() {
     currentConnection.on('open', () => {
         console.log("CONEXÃO P2P ESTABELECIDA!");
-        alert("Conectado! Escolha um jogo para começar a partida.");
+        alert("Conectado! O Host deve escolher um jogo para começar a partida.");
         closeConnectionUI(); // Fecha o painel após conectar
     });
 
     currentConnection.on('data', (data) => {
-        const scene = engine ? engine.getScene() : null;
-        
+        // ========= INÍCIO DA CORREÇÃO =========
+        // Primeiro, tratamos o caso mais importante: o início do jogo.
+        // Isso garante que o 'launchGame' seja chamado antes de qualquer outra lógica que dependa da 'engine'.
         if (data.type === 'start_game') {
-            // Apenas o Peer vai receber essa mensagem, então é seguro chamar launchGame aqui
             launchGame(data.gameId);
-            return; // Evita processar outras mensagens desnecessariamente
+            return; // Encerra o processamento desta mensagem aqui.
         }
 
-        if (!scene) return; // Garante que a cena existe para as mensagens de update
+        // Para qualquer outra mensagem, agora podemos ter certeza que a 'engine' deveria existir.
+        // Se ela não existir por algum motivo, saímos da função para evitar erros.
+        const scene = engine ? engine.getScene() : null;
+        if (!scene) {
+            console.warn("Recebida uma mensagem de jogo, mas a cena não está pronta.");
+            return;
+        }
+        // ========= FIM DA CORREÇÃO =========
 
         if (data.type === 'ready' && !opponent) {
             console.log("Oponente está pronto. Criando seu personagem.");
@@ -284,6 +291,15 @@ function setupConnectionEvents() {
         if (opponent) opponent.dispose();
         opponent = null;
         currentConnection = null;
+        // Opcional: voltar para o menu principal se o jogo estiver em andamento
+        if (gameState.currentScreen.startsWith('playing')) {
+            if (engine) {
+                engine.stopRenderLoop();
+                engine.getScene()?.dispose();
+            }
+            gameState.currentScreen = 'menu';
+            render();
+        }
     });
 }
 
@@ -348,8 +364,6 @@ function setupJoystick() {
 }
 
 async function launchGame(gameId) {
-    // Esta função agora é chamada de forma segura tanto pelo Host (via clique) quanto pelo Peer (via mensagem)
-    
     gameState.score = { blue: 0, red: 0 };
     opponent = null;
     ball = null;
@@ -515,27 +529,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const gameCard = target.closest('.game-card');
         const navItem = target.closest('.nav-item');
 
-        // ========= INÍCIO DA CORREÇÃO =========
         if (gameCard) {
             const gameId = gameCard.dataset.gameId;
 
-            // Se estamos conectados com alguém
             if (currentConnection && currentConnection.open) {
                 if (isHost) {
-                    // Se eu sou o Host, eu envio o comando e inicio o jogo para mim.
                     currentConnection.send({ type: 'start_game', gameId: gameId });
                     launchGame(gameId);
                 } else {
-                    // Se eu NÃO sou o Host, eu não posso iniciar o jogo. Apenas aviso.
                     alert("Apenas o Host (o jogador que recebeu a conexão) pode iniciar o jogo.");
                 }
             } else {
-                // Se não há conexão (single-player), apenas inicio o jogo normalmente.
                 launchGame(gameId);
             }
             return;
         }
-        // ========= FIM DA CORREÇÃO =========
         
         if (navItem) {
             const navAction = navItem.dataset.nav;
