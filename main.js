@@ -235,55 +235,59 @@ function setupConnectionEvents() {
     currentConnection.on('open', () => {
         console.log("CONEXÃO P2P ESTABELECIDA!");
         alert("Conectado! O Host deve escolher um jogo para começar a partida.");
-        closeConnectionUI(); // Fecha o painel após conectar
+        closeConnectionUI();
     });
 
     currentConnection.on('data', (data) => {
-        // ========= INÍCIO DA CORREÇÃO =========
-        // Primeiro, tratamos o caso mais importante: o início do jogo.
-        // Isso garante que o 'launchGame' seja chamado antes de qualquer outra lógica que dependa da 'engine'.
+        // ========= INÍCIO DA CORREÇÃO DEFINITIVA =========
+        // Estrutura Lógica: SE/SENÃO, para garantir que apenas um bloco seja executado.
+        
         if (data.type === 'start_game') {
+            // Este é o ponto de entrada para o jogador que NÃO é o host.
+            // Esta chamada irá criar a 'engine' e começar a carregar a cena.
             launchGame(data.gameId);
-            return; // Encerra o processamento desta mensagem aqui.
-        }
-
-        // Para qualquer outra mensagem, agora podemos ter certeza que a 'engine' deveria existir.
-        // Se ela não existir por algum motivo, saímos da função para evitar erros.
-        const scene = engine ? engine.getScene() : null;
-        if (!scene) {
-            console.warn("Recebida uma mensagem de jogo, mas a cena não está pronta.");
-            return;
-        }
-        // ========= FIM DA CORREÇÃO =========
-
-        if (data.type === 'ready' && !opponent) {
-            console.log("Oponente está pronto. Criando seu personagem.");
-            opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
-            opponent.rotationQuaternion = new BABYLON.Quaternion();
-            const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
-            if (data.texture) {
-                opponentMaterial.diffuseTexture = new BABYLON.Texture(data.texture, scene);
-            } else {
-                opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
+        
+        } else {
+            // Para QUALQUER OUTRA mensagem, a 'engine' e a cena DEVEM existir.
+            // Se não existirem, significa que 'launchGame' ainda não terminou.
+            const scene = engine ? engine.getScene() : null;
+            if (!scene) {
+                // Ignoramos a mensagem para evitar o erro. Ela provavelmente chegará de novo.
+                console.warn(`Mensagem do tipo '${data.type}' recebida ANTES da cena estar pronta. Ignorando.`);
+                return;
             }
-            opponent.material = opponentMaterial;
+
+            // Agora que temos certeza que a cena existe, podemos processar as outras mensagens.
+            if (data.type === 'ready' && !opponent) {
+                console.log("Oponente está pronto. Criando seu personagem.");
+                opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
+                opponent.rotationQuaternion = new BABYLON.Quaternion();
+                const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
+                if (data.texture) {
+                    opponentMaterial.diffuseTexture = new BABYLON.Texture(data.texture, scene);
+                } else {
+                    opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
+                }
+                opponent.material = opponentMaterial;
+            }
+            else if (data.type === 'update' && opponent) {
+                const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
+                const targetRot = new BABYLON.Quaternion(data.rot._x, data.rot._y, data.rot._z, data.rot._w);
+                opponent.position = BABYLON.Vector3.Lerp(opponent.position, targetPos, 0.2);
+                opponent.rotationQuaternion = BABYLON.Quaternion.Slerp(opponent.rotationQuaternion, targetRot, 0.2);
+            }
+            else if (data.type === 'ball_update' && ball && !isHost) {
+                const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
+                const targetVel = new BABYLON.Vector3(data.vel._x, data.vel._y, data.vel._z);
+                ball.position = BABYLON.Vector3.Lerp(ball.position, targetPos, 0.5);
+                ball.physicsImpostor.setLinearVelocity(targetVel);
+            }
+            else if (data.type === 'score_update') {
+                gameState.score = data.score;
+                render();
+            }
         }
-        else if (data.type === 'update' && opponent) {
-            const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
-            const targetRot = new BABYLON.Quaternion(data.rot._x, data.rot._y, data.rot._z, data.rot._w);
-            opponent.position = BABYLON.Vector3.Lerp(opponent.position, targetPos, 0.2);
-            opponent.rotationQuaternion = BABYLON.Quaternion.Slerp(opponent.rotationQuaternion, targetRot, 0.2);
-        }
-        else if (data.type === 'ball_update' && ball && !isHost) {
-            const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
-            const targetVel = new BABYLON.Vector3(data.vel._x, data.vel._y, data.vel._z);
-            ball.position = BABYLON.Vector3.Lerp(ball.position, targetPos, 0.5);
-            ball.physicsImpostor.setLinearVelocity(targetVel);
-        }
-        else if (data.type === 'score_update') {
-            gameState.score = data.score;
-            render();
-        }
+        // ========= FIM DA CORREÇÃO DEFINITIVA =========
     });
 
     currentConnection.on('close', () => {
@@ -291,7 +295,6 @@ function setupConnectionEvents() {
         if (opponent) opponent.dispose();
         opponent = null;
         currentConnection = null;
-        // Opcional: voltar para o menu principal se o jogo estiver em andamento
         if (gameState.currentScreen.startsWith('playing')) {
             if (engine) {
                 engine.stopRenderLoop();
@@ -376,6 +379,7 @@ async function launchGame(gameId) {
     }
 
     try {
+        // A engine é criada aqui, mas a cena só existe depois dos 'await'.
         if (!engine) {
             engine = new BABYLON.Engine(canvas, true, null, true);
         }
@@ -406,6 +410,7 @@ async function launchGame(gameId) {
         player = gameData.player;
         player.moveDirection = new BABYLON.Vector3(0, 0, 0);
         
+        // Agora é seguro enviar a mensagem 'ready', pois a cena já foi criada.
         if (currentConnection) {
             const myTexture = localStorage.getItem("playerAvatarTexture");
             currentConnection.send({ type: 'ready', texture: myTexture });
@@ -480,10 +485,7 @@ async function launchAvatarEditor() {
 
     if (engine) {
         engine.stopRenderLoop();
-        const oldScene = engine.getScene();
-        if(oldScene) {
-            oldScene.dispose();
-        }
+        engine.getScene()?.dispose();
     }
 
     try {
@@ -519,7 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (opponentId) {
             console.log("Tentando conectar a:", opponentId);
             currentConnection = peer.connect(opponentId);
-            isHost = false; // Quem inicia a conexão não é o host
+            isHost = false; 
             setupConnectionEvents();
         }
     };
@@ -584,7 +586,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 gameState.editor.color = colorBtn.dataset.color;
             }
             if (backBtn) {
-                stopAvatarEditor(engine);
+                // Supondo que stopAvatarEditor está em avatarEditor.js
+                // stopAvatarEditor(engine); 
+                if (engine) {
+                    engine.stopRenderLoop();
+                    engine.getScene()?.dispose();
+                }
                 gameState.currentScreen = 'menu';
                 render();
             }
