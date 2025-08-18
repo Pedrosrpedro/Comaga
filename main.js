@@ -180,15 +180,15 @@ const canvas = document.getElementById('renderCanvas');
 const joystickZone = document.getElementById('joystickZone');
 let engine;
 let player;
-let opponent = null;
+let opponent = null; // Guarda a referência do objeto 3D do oponente
 let moveX = 0;
 let moveZ = 0;
 
 // =======================================================
 // CONFIGURAÇÃO DO JSONBIN.IO E MATCHMAKING
 // =======================================================
-const JSONBIN_API_KEY = '$2a$10$4tbHfolQwMBQAiybZXK0ruCq0xYIPmFuq8NMAqrP89muVvvgQavta'; // <<-- COLOQUE SUA API KEY AQUI
-const JSONBIN_BIN_ID = '68a26a8ed0ea881f405bf280';       // <<-- COLOQUE SEU BIN ID AQUI
+const JSONBIN_API_KEY = 'SUA_X_MASTER_KEY_AQUI'; // <<-- COLOQUE SUA API KEY AQUI
+const JSONBIN_BIN_ID = 'SEU_BIN_ID_AQUI';       // <<-- COLOQUE SEU BIN ID AQUI
 const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`;
 
 let peer;
@@ -199,9 +199,7 @@ let isSearching = false;
 async function readBin() {
     const response = await fetch(JSONBIN_URL, {
         method: 'GET',
-        headers: {
-            'X-Master-Key': JSONBIN_API_KEY
-        }
+        headers: { 'X-Master-Key': JSONBIN_API_KEY }
     });
     const data = await response.json();
     return data.record;
@@ -220,33 +218,27 @@ async function writeBin(data) {
 
 function initializePeer() {
     if (typeof Peer === 'undefined') {
-        console.error("PeerJS não foi carregado. Verifique o seu index.html.");
+        console.error("PeerJS não foi carregado.");
         alert("Erro: a biblioteca de multiplayer não foi encontrada.");
         return;
     }
 
     peer = new Peer();
-    peer.on('open', (id) => {
-        console.log("Conectado ao servidor PeerJS com o ID:", id);
-    });
-    
+    peer.on('open', (id) => { console.log("Conectado ao servidor PeerJS com o ID:", id); });
     peer.on('connection', (conn) => {
-        console.log("Recebi uma conexão de um oponente!");
         currentConnection = conn;
         setupConnectionEvents();
     });
-
     peer.on('error', (err) => {
         console.error("Erro no PeerJS:", err);
-        alert(`Erro de conexão multiplayer: ${err.type}`);
         isSearching = false;
-        if(pollingInterval) clearInterval(pollingInterval);
+        if (pollingInterval) clearInterval(pollingInterval);
     });
 }
 
 async function startMatchmaking() {
     if (isSearching || currentConnection) return alert("Você já está procurando ou conectado.");
-    if (!peer || !peer.id) return alert("Aguarde a conexão com o servidor PeerJS... Tente novamente em alguns segundos.");
+    if (!peer || !peer.id) return alert("Aguarde a conexão com o servidor PeerJS...");
 
     isSearching = true;
     alert("Procurando outro jogador...");
@@ -278,10 +270,8 @@ async function startMatchmaking() {
 }
 
 async function pollForMatch() {
-    console.log("Verificando se fomos encontrados...");
     const binData = await readBin();
     if (peer && !binData.players_waiting.includes(peer.id)) {
-        alert("Um jogador se conectou a você!");
         clearInterval(pollingInterval);
         isSearching = false;
     }
@@ -292,8 +282,11 @@ function setupConnectionEvents() {
     isSearching = false;
 
     currentConnection.on('open', () => {
-        alert("Conexão estabelecida! O jogo vai começar.");
-        
+        // MENSAGEM DE CONFIRMAÇÃO DA CONEXÃO P2P
+        console.log("CONEXÃO P2P ESTABELECIDA! Ambos os jogadores estão conectados um ao outro.");
+        alert("Conexão estabelecida! Carregando o jogo...");
+
+        // Inicia o jogo para ambos os jogadores e, quando terminar, envia o sinal de 'pronto'
         launchGame('disaster_survival').then(() => {
             const myTexture = localStorage.getItem("playerAvatarTexture");
             currentConnection.send({ type: 'ready', texture: myTexture });
@@ -301,33 +294,38 @@ function setupConnectionEvents() {
     });
 
     currentConnection.on('data', (data) => {
-        const scene = engine.getScene();
+        const scene = engine ? engine.getScene() : null;
         if (!scene) return;
 
+        // Ao receber a mensagem 'ready' do oponente, cria o personagem dele
         if (data.type === 'ready') {
             if (!opponent) {
+                console.log("Oponente está pronto. Criando seu personagem na cena.");
                 opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
                 opponent.rotationQuaternion = new BABYLON.Quaternion();
                 const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
                 
-                if(data.texture) {
+                if (data.texture) {
                     const texture = new BABYLON.Texture(data.texture, scene);
                     opponentMaterial.diffuseTexture = texture;
                 } else {
-                    opponentMaterial.diffuseColor = new BABYLON.Color3.FromHexString("#ff0000");
+                    opponentMaterial.diffuseColor = new BABYLON.Color3.FromHexString("#ff0000"); // Cor reserva
                 }
                 opponent.material = opponentMaterial;
 
+                // Envia nosso sinal de 'pronto' de volta, caso o dele tenha chegado primeiro
                 const myTexture = localStorage.getItem("playerAvatarTexture");
                 currentConnection.send({ type: 'ready', texture: myTexture });
             }
         }
         
+        // Ao receber uma atualização de estado, move o personagem do oponente
         else if (data.type === 'update' && opponent) {
             const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
-            opponent.position = BABYLON.Vector3.Lerp(opponent.position, targetPos, 0.2);
-
             const targetRot = new BABYLON.Quaternion(data.rot._x, data.rot._y, data.rot._z, data.rot._w);
+            
+            // Suaviza o movimento (interpolação) para evitar "engasgos"
+            opponent.position = BABYLON.Vector3.Lerp(opponent.position, targetPos, 0.2);
             opponent.rotationQuaternion = BABYLON.Quaternion.Slerp(opponent.rotationQuaternion, targetRot, 0.2);
         }
     });
@@ -341,7 +339,6 @@ function setupConnectionEvents() {
         currentConnection = null;
     });
 }
-
 
 const keys = { w: false, a: false, s: false, d: false, ' ': false };
 window.addEventListener('keydown', (event) => {
@@ -417,101 +414,90 @@ async function launchGame(gameId) {
         engine.stopRenderLoop();
         engine.getScene()?.dispose();
     }
+    
+    // Zera o oponente antigo se existir
+    opponent = null;
 
-    gsap.to(".roblox-container", {
-        duration: 0.5,
-        opacity: 0,
-        onComplete: async () => {
-            try {
-                if (!engine) {
-                    engine = new BABYLON.Engine(canvas, true, null, true);
-                }
-                const gameData = await startDisasterGame(engine, canvas, updateHud, sounds);
-                
-                if (!gameData || !gameData.scene || !gameData.player) {
-                    throw new Error("A função startDisasterGame não retornou a cena ou o jogador.");
-                }
-                
-                const scene = gameData.scene;
-                player = gameData.player;
-                
-                player.moveDirection = new BABYLON.Vector3(0, 0, 0);
-
-                setupJoystick();
-                
-                let lastSentTime = 0;
-
-                engine.runRenderLoop(() => {
-                    const now = Date.now();
-                    
-                    if (gameState.currentScreen === 'playing' && player && player.physicsImpostor) {
-                        const camera = scene.activeCamera;
-                        const playerSpeed = 7.5;
-                        const jumpForce = 6;
-                        
-                        const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
-                        const hit = scene.pickWithRay(ray, (mesh) => mesh.name === "ground" || mesh.name.startsWith("tower"));
-                        const isOnGround = hit.hit;
-
-                        if (keys[' '] && isOnGround) {
-                            player.physicsImpostor.applyImpulse(
-                                new BABYLON.Vector3(0, jumpForce, 0),
-                                player.getAbsolutePosition()
-                            );
-                        }
-                        keys[' '] = false;
-
-                        let totalMoveX = moveX;
-                        let totalMoveZ = moveZ;
-                        if (keys.w) totalMoveZ += 1;
-                        if (keys.s) totalMoveZ -= 1;
-                        if (keys.a) totalMoveX -= 1;
-                        if (keys.d) totalMoveX += 1;
-
-                        const cameraForward = camera.getDirection(BABYLON.Vector3.Forward());
-                        const cameraRight = camera.getDirection(BABYLON.Vector3.Right());
-                        cameraForward.y = 0;
-                        cameraRight.y = 0;
-                        cameraForward.normalize();
-                        cameraRight.normalize();
-
-                        const moveDirection = cameraRight.scale(totalMoveX).add(cameraForward.scale(totalMoveZ));
-                        const currentVelocity = player.physicsImpostor.getLinearVelocity();
-
-                        if (moveDirection.lengthSquared() > 0) {
-                            moveDirection.normalize();
-                            player.moveDirection.copyFrom(moveDirection);
-                            
-                            const newVelocity = moveDirection.scale(playerSpeed);
-                            player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVelocity.x, currentVelocity.y, newVelocity.z));
-                        } else {
-                            player.moveDirection.set(0, 0, 0); 
-                            player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
-                        }
-                        
-                        if (currentConnection && currentConnection.open && now - lastSentTime > 100) {
-                            currentConnection.send({
-                                type: 'update',
-                                pos: player.position,
-                                rot: player.rotationQuaternion
-                            });
-                            lastSentTime = now;
-                        }
-                    }
-                    if(scene && scene.isReady()) scene.render();
-                });
-
-                window.addEventListener("resize", () => { if(engine) engine.resize(); });
-                gameState.currentScreen = 'playing';
-                sounds.music.play();
-                render();
-            } catch (error) {
-                console.error("FALHA CRÍTICA AO INICIAR O JOGO:", error.message, error.stack);
-                gameState.currentScreen = 'menu';
-                render();
-            }
+    try {
+        if (!engine) {
+            engine = new BABYLON.Engine(canvas, true, null, true);
         }
-    });
+        const gameData = await startDisasterGame(engine, canvas, updateHud, sounds);
+        
+        if (!gameData || !gameData.scene || !gameData.player) {
+            throw new Error("A função startDisasterGame não retornou a cena ou o jogador.");
+        }
+        
+        const scene = gameData.scene;
+        player = gameData.player;
+        
+        player.moveDirection = new BABYLON.Vector3(0, 0, 0);
+
+        setupJoystick();
+        
+        let lastSentTime = 0;
+
+        engine.runRenderLoop(() => {
+            const now = Date.now();
+            
+            if (gameState.currentScreen === 'playing' && player && player.physicsImpostor) {
+                // Lógica de movimento (não precisa de alterações)
+                const camera = scene.activeCamera;
+                const playerSpeed = 7.5;
+                const jumpForce = 6;
+                const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
+                const hit = scene.pickWithRay(ray, (mesh) => mesh.name === "ground" || mesh.name.startsWith("tower"));
+                const isOnGround = hit.hit;
+                if (keys[' '] && isOnGround) {
+                    player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, jumpForce, 0), player.getAbsolutePosition());
+                }
+                keys[' '] = false;
+                let totalMoveX = moveX;
+                let totalMoveZ = moveZ;
+                if (keys.w) totalMoveZ += 1;
+                if (keys.s) totalMoveZ -= 1;
+                if (keys.a) totalMoveX -= 1;
+                if (keys.d) totalMoveX += 1;
+                const cameraForward = camera.getDirection(BABYLON.Vector3.Forward());
+                const cameraRight = camera.getDirection(BABYLON.Vector3.Right());
+                cameraForward.y = 0;
+                cameraRight.y = 0;
+                cameraForward.normalize();
+                cameraRight.normalize();
+                const moveDirection = cameraRight.scale(totalMoveX).add(cameraForward.scale(totalMoveZ));
+                const currentVelocity = player.physicsImpostor.getLinearVelocity();
+                if (moveDirection.lengthSquared() > 0) {
+                    moveDirection.normalize();
+                    player.moveDirection.copyFrom(moveDirection);
+                    const newVelocity = moveDirection.scale(playerSpeed);
+                    player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVelocity.x, currentVelocity.y, newVelocity.z));
+                } else {
+                    player.moveDirection.set(0, 0, 0); 
+                    player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
+                }
+                
+                // Lógica para enviar os dados de sincronização
+                if (currentConnection && currentConnection.open && now - lastSentTime > 100) {
+                    currentConnection.send({
+                        type: 'update',
+                        pos: player.position,
+                        rot: player.rotationQuaternion
+                    });
+                    lastSentTime = now;
+                }
+            }
+            if(scene && scene.isReady()) scene.render();
+        });
+
+        window.addEventListener("resize", () => { if(engine) engine.resize(); });
+        gameState.currentScreen = 'playing';
+        sounds.music.play();
+        render();
+    } catch (error) {
+        console.error("FALHA CRÍTICA AO INICIAR O JOGO:", error.message, error.stack);
+        gameState.currentScreen = 'menu';
+        render();
+    }
 }
 
 async function launchAvatarEditor() {
