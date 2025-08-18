@@ -23,19 +23,27 @@
     <div id="joystickZone" class="hidden"></div>
 
     <!-- ======================================================= -->
+    <!--              FERRAMENTA DE MULTIPLAYER                -->
+    <!-- ======================================================= -->
+    <div id="connection-ui">
+        <p>Seu ID: <strong id="my-id">Carregando...</strong> (copie e envie para seu amigo)</p>
+        <input type="text" id="other-id" placeholder="Cole o ID do seu amigo aqui">
+        <button id="connect-btn">Conectar</button>
+    </div>
+
+    <!-- ======================================================= -->
     <!--              FERRAMENTA DE DEPURAÇÃO (CONSOLE)          -->
     <!-- ======================================================= -->
 
-    <!-- Botão visível para abrir/fechar o console, com chamada de função onclick -->
+    <!-- Botão visível para abrir/fechar o console -->
     <div id="debug-trigger" onclick="toggleConsole()">
-        <i class="fa-solid fa-bug"></i> <!-- Ícone de "bug" -->
+        <i class="fa-solid fa-bug"></i>
     </div>
     
     <!-- O container do console em si. Começa oculto. -->
     <div id="mobile-console" class="hidden">
         <div class="console-header">
             <span>Console de Depuração</span>
-            <!-- Botões com chamadas de função onclick -->
             <button onclick="clearConsole()">Limpar</button>
             <button onclick="closeConsole()">Fechar</button>
         </div>
@@ -45,7 +53,7 @@
 
     <!-- ======================================================= -->
     <!--                 IMPORTAÇÃO DAS BIBLIOTECAS              -->
-    <!-- A ordem de importação é importante!                     -->
+    <!-- A ordem de importação é MUITO importante!               -->
     <!-- ======================================================= -->
 
     <!-- BIBLIOTECAS DE JOGO (fundamentais) -->
@@ -59,17 +67,19 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.5/gsap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
     
+    <!-- BIBLIOTECA PARA MULTIPLAYER -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    
     <!-- ======================================================= -->
     <!--           NOSSOS SCRIPTS (sempre por último)            -->
     <!-- ======================================================= -->
     
-    <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-    
-    <!-- A lógica do mini-jogo -->
-    <script src="disasterGame.js"></script> 
-
-    <!-- NOVA LINHA: A lógica do editor de avatar -->
+    <!-- A lógica do editor de avatar -->
     <script src="avatarEditor.js"></script>
+
+    <!-- As lógicas dos minijogos -->
+    <script src="disasterGame.js"></script> 
+    <script src="soccerGame.js"></script>
     
     <!-- O script principal que gerencia tudo -->
     <script src="main.js"></script>
