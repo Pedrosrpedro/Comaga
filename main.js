@@ -74,6 +74,7 @@ const sounds = {
 const gameState = {
     currentScreen: 'menu',
     hud: { message: '', timer: '' },
+    score: { blue: 0, red: 0 },
     editor: {
         scene: null,
         avatar: null,
@@ -85,7 +86,8 @@ const gameState = {
 };
 
 const availableGames = [
-    { id: 'disaster_survival', displayName: 'SOBREVIVA AO DESASTRE', name: 'Natural Disaster Survival', rating: 91, players: 12.2 }
+    { id: 'disaster_survival', displayName: 'SOBREVIVA AO DESASTRE', name: 'Natural Disaster Survival', rating: 91, players: 12.2 },
+    { id: 'soccer_game', displayName: 'FUTEBOL 1V1', name: 'Soccer Stars', rating: 88, players: 1.5 }
 ];
 
 function createHeaderHTML() {
@@ -94,7 +96,6 @@ function createHeaderHTML() {
             <nav class="main-nav">
                 <a href="#" class="nav-item active" data-nav="home"><i class="fa-solid fa-house"></i> Home</a>
                 <a href="#" class="nav-item" data-nav="avatar"><i class="fa-solid fa-user-astronaut"></i> Avatar</a>
-                <a href="#" class="nav-item" data-nav="multiplayer"><i class="fa-solid fa-users"></i> Multiplayer</a>
             </nav>
         </header>
     `;
@@ -134,6 +135,14 @@ function createGamesGridHTML(games) {
 }
 
 function createHudHTML() {
+    if (gameState.currentScreen === 'playing_soccer') {
+        return `
+            <div class="soccer-hud">
+                <div class="team-blue">${gameState.score.blue}</div>
+                <div class="team-red">${gameState.score.red}</div>
+            </div>
+        `;
+    }
     return `
         <div class="hud-container">
             <p>${gameState.hud.message}</p>
@@ -180,178 +189,100 @@ const canvas = document.getElementById('renderCanvas');
 const joystickZone = document.getElementById('joystickZone');
 let engine;
 let player;
-let opponent = null; // Guarda a referência do objeto 3D do oponente
+let opponent = null;
+let ball = null;
+let isHost = false;
 let moveX = 0;
 let moveZ = 0;
 
 // =======================================================
-// CONFIGURAÇÃO DO JSONBIN.IO E MATCHMAKING
+// LÓGICA DE MULTIPLAYER (CÓPIA DE ID)
 // =======================================================
-const JSONBIN_API_KEY = 'SUA_X_MASTER_KEY_AQUI'; // <<-- COLOQUE SUA API KEY AQUI
-const JSONBIN_BIN_ID = 'SEU_BIN_ID_AQUI';       // <<-- COLOQUE SEU BIN ID AQUI
-const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`;
-
 let peer;
 let currentConnection;
-let pollingInterval = null;
-let isSearching = false;
-
-async function readBin() {
-    const response = await fetch(JSONBIN_URL, {
-        method: 'GET',
-        headers: { 'X-Master-Key': JSONBIN_API_KEY }
-    });
-    const data = await response.json();
-    return data.record;
-}
-
-async function writeBin(data) {
-    await fetch(JSONBIN_URL, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-Master-Key': JSONBIN_API_KEY
-        },
-        body: JSON.stringify(data)
-    });
-}
 
 function initializePeer() {
     if (typeof Peer === 'undefined') {
         console.error("PeerJS não foi carregado.");
-        alert("Erro: a biblioteca de multiplayer não foi encontrada.");
         return;
     }
 
     peer = new Peer();
-    peer.on('open', (id) => { console.log("Conectado ao servidor PeerJS com o ID:", id); });
+    peer.on('open', (id) => {
+        console.log("Meu ID PeerJS é:", id);
+        document.getElementById('my-id').textContent = id;
+    });
+
     peer.on('connection', (conn) => {
+        console.log("Um jogador se conectou a nós!");
         currentConnection = conn;
+        isHost = true; // Quem recebe a conexão é o host
         setupConnectionEvents();
     });
-    peer.on('error', (err) => {
-        console.error("Erro no PeerJS:", err);
-        isSearching = false;
-        if (pollingInterval) clearInterval(pollingInterval);
-    });
-}
 
-async function startMatchmaking() {
-    if (isSearching || currentConnection) return alert("Você já está procurando ou conectado.");
-    if (!peer || !peer.id) return alert("Aguarde a conexão com o servidor PeerJS...");
-
-    isSearching = true;
-    alert("Procurando outro jogador...");
-
-    try {
-        const binData = await readBin();
-        let playersWaiting = binData.players_waiting || [];
-        const opponentId = playersWaiting.find(id => id !== peer.id);
-
-        if (opponentId) {
-            alert(`Partida encontrada com ${opponentId}! Conectando...`);
-            const updatedList = playersWaiting.filter(id => id !== opponentId);
-            await writeBin({ players_waiting: updatedList });
-            currentConnection = peer.connect(opponentId);
-            setupConnectionEvents();
-        } else {
-            alert("Nenhum jogador encontrado. Entrando na fila de espera...");
-            if (!playersWaiting.includes(peer.id)) {
-                playersWaiting.push(peer.id);
-                await writeBin({ players_waiting: playersWaiting });
-            }
-            pollingInterval = setInterval(pollForMatch, 5000);
-        }
-    } catch (error) {
-        console.error("Erro no matchmaking:", error);
-        alert("Erro ao procurar partida.");
-        isSearching = false;
-    }
-}
-
-async function pollForMatch() {
-    const binData = await readBin();
-    if (peer && !binData.players_waiting.includes(peer.id)) {
-        clearInterval(pollingInterval);
-        isSearching = false;
-    }
+    peer.on('error', (err) => console.error("Erro no PeerJS:", err));
 }
 
 function setupConnectionEvents() {
-    if (pollingInterval) clearInterval(pollingInterval);
-    isSearching = false;
-
     currentConnection.on('open', () => {
-        // MENSAGEM DE CONFIRMAÇÃO DA CONEXÃO P2P
-        console.log("CONEXÃO P2P ESTABELECIDA! Ambos os jogadores estão conectados um ao outro.");
-        alert("Conexão estabelecida! Carregando o jogo...");
-
-        // Inicia o jogo para ambos os jogadores e, quando terminar, envia o sinal de 'pronto'
-        launchGame('disaster_survival').then(() => {
-            const myTexture = localStorage.getItem("playerAvatarTexture");
-            currentConnection.send({ type: 'ready', texture: myTexture });
-        });
+        console.log("CONEXÃO P2P ESTABELECIDA!");
+        alert("Conectado! Escolha um jogo para começar a partida.");
     });
 
     currentConnection.on('data', (data) => {
         const scene = engine ? engine.getScene() : null;
         if (!scene) return;
 
-        // Ao receber a mensagem 'ready' do oponente, cria o personagem dele
-        if (data.type === 'ready') {
-            if (!opponent) {
-                console.log("Oponente está pronto. Criando seu personagem na cena.");
-                opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
-                opponent.rotationQuaternion = new BABYLON.Quaternion();
-                const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
-                
-                if (data.texture) {
-                    const texture = new BABYLON.Texture(data.texture, scene);
-                    opponentMaterial.diffuseTexture = texture;
-                } else {
-                    opponentMaterial.diffuseColor = new BABYLON.Color3.FromHexString("#ff0000"); // Cor reserva
-                }
-                opponent.material = opponentMaterial;
-
-                // Envia nosso sinal de 'pronto' de volta, caso o dele tenha chegado primeiro
-                const myTexture = localStorage.getItem("playerAvatarTexture");
-                currentConnection.send({ type: 'ready', texture: myTexture });
-            }
+        if (data.type === 'start_game') {
+            launchGame(data.gameId);
         }
-        
-        // Ao receber uma atualização de estado, move o personagem do oponente
+        else if (data.type === 'ready' && !opponent) {
+            console.log("Oponente está pronto. Criando seu personagem.");
+            opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
+            opponent.rotationQuaternion = new BABYLON.Quaternion();
+            const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
+            if (data.texture) {
+                opponentMaterial.diffuseTexture = new BABYLON.Texture(data.texture, scene);
+            } else {
+                opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
+            }
+            opponent.material = opponentMaterial;
+        }
         else if (data.type === 'update' && opponent) {
             const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
             const targetRot = new BABYLON.Quaternion(data.rot._x, data.rot._y, data.rot._z, data.rot._w);
-            
-            // Suaviza o movimento (interpolação) para evitar "engasgos"
             opponent.position = BABYLON.Vector3.Lerp(opponent.position, targetPos, 0.2);
             opponent.rotationQuaternion = BABYLON.Quaternion.Slerp(opponent.rotationQuaternion, targetRot, 0.2);
+        }
+        else if (data.type === 'ball_update' && ball && !isHost) {
+            const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
+            const targetVel = new BABYLON.Vector3(data.vel._x, data.vel._y, data.vel._z);
+            ball.position = BABYLON.Vector3.Lerp(ball.position, targetPos, 0.5);
+            ball.physicsImpostor.setLinearVelocity(targetVel);
+        }
+        else if (data.type === 'score_update') {
+            gameState.score = data.score;
+            render();
         }
     });
 
     currentConnection.on('close', () => {
-        alert("O outro jogador desconectou.");
-        if (opponent) {
-            opponent.dispose();
-            opponent = null;
-        }
+        alert("Oponente desconectou.");
+        if (opponent) opponent.dispose();
+        opponent = null;
         currentConnection = null;
     });
 }
 
+
 const keys = { w: false, a: false, s: false, d: false, ' ': false };
 window.addEventListener('keydown', (event) => {
     const key = event.key.toLowerCase();
-    if (keys.hasOwnProperty(key)) {
-        keys[key] = true;
-    }
+    if (keys.hasOwnProperty(key)) keys[key] = true;
 });
 window.addEventListener('keyup', (event) => {
     const key = event.key.toLowerCase();
-    if (keys.hasOwnProperty(key)) {
-        keys[key] = false;
-    }
+    if (keys.hasOwnProperty(key)) keys[key] = false;
 });
 
 function render() {
@@ -361,8 +292,7 @@ function render() {
 
     if (gameState.currentScreen === 'menu') {
         appContainer.innerHTML = `<div class="roblox-container">${createHeaderHTML()}<main class="main-content">${createFriendsListHTML()}${createGamesGridHTML(availableGames)}</main></div>`;
-        gsap.from(".roblox-container", { duration: 0.5, opacity: 0 });
-    } else if (gameState.currentScreen === 'playing') {
+    } else if (gameState.currentScreen === 'playing_soccer' || gameState.currentScreen === 'playing_disaster') {
         canvas.classList.remove('hidden');
         if (engine) engine.resize();
         joystickZone.classList.remove('hidden');
@@ -379,13 +309,12 @@ function render() {
 function updateHud(message, timer) {
     gameState.hud.message = message;
     gameState.hud.timer = timer;
-    if (gameState.currentScreen === 'playing') {
+    if (gameState.currentScreen === 'playing_disaster') {
         render();
     }
 }
 
 function setupJoystick() {
-    console.log("Configurando o joystick virtual...");
     const options = {
         zone: joystickZone,
         mode: 'static',
@@ -406,47 +335,67 @@ function setupJoystick() {
 }
 
 async function launchGame(gameId) {
+    if (currentConnection && isHost) {
+        currentConnection.send({ type: 'start_game', gameId: gameId });
+    }
+
+    gameState.score = { blue: 0, red: 0 };
+    opponent = null;
+    ball = null;
     gameState.currentScreen = 'loading';
     render();
-    stopAvatarEditor(engine);
 
     if (engine) {
         engine.stopRenderLoop();
         engine.getScene()?.dispose();
     }
-    
-    // Zera o oponente antigo se existir
-    opponent = null;
 
     try {
         if (!engine) {
             engine = new BABYLON.Engine(canvas, true, null, true);
         }
-        const gameData = await startDisasterGame(engine, canvas, updateHud, sounds);
-        
-        if (!gameData || !gameData.scene || !gameData.player) {
-            throw new Error("A função startDisasterGame não retornou a cena ou o jogador.");
+
+        let gameData;
+        if (gameId === 'soccer_game') {
+            gameState.currentScreen = 'playing_soccer';
+            gameData = await startSoccerGame(engine, canvas, (scoringTeam) => {
+                if (scoringTeam === 'red') gameState.score.red++;
+                if (scoringTeam === 'blue') gameState.score.blue++;
+                render();
+                
+                ball.position = new BABYLON.Vector3(0, 5, 0);
+                ball.physicsImpostor.setLinearVelocity(BABYLON.Vector3.Zero());
+                ball.physicsImpostor.setAngularVelocity(BABYLON.Vector3.Zero());
+
+                if (isHost && currentConnection) {
+                    currentConnection.send({ type: 'score_update', score: gameState.score });
+                }
+            });
+            ball = gameData.ball;
+        } else {
+            gameState.currentScreen = 'playing_disaster';
+            gameData = await startDisasterGame(engine, canvas, updateHud, sounds);
         }
         
         const scene = gameData.scene;
         player = gameData.player;
-        
         player.moveDirection = new BABYLON.Vector3(0, 0, 0);
-
+        
+        if (currentConnection) {
+            const myTexture = localStorage.getItem("playerAvatarTexture");
+            currentConnection.send({ type: 'ready', texture: myTexture });
+        }
+        
         setupJoystick();
         
         let lastSentTime = 0;
-
         engine.runRenderLoop(() => {
-            const now = Date.now();
-            
-            if (gameState.currentScreen === 'playing' && player && player.physicsImpostor) {
-                // Lógica de movimento (não precisa de alterações)
+            if (player && player.physicsImpostor) {
                 const camera = scene.activeCamera;
                 const playerSpeed = 7.5;
                 const jumpForce = 6;
                 const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
-                const hit = scene.pickWithRay(ray, (mesh) => mesh.name === "ground" || mesh.name.startsWith("tower"));
+                const hit = scene.pickWithRay(ray, (mesh) => mesh.name !== "player" && mesh.name !== "opponent");
                 const isOnGround = hit.hit;
                 if (keys[' '] && isOnGround) {
                     player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, jumpForce, 0), player.getAbsolutePosition());
@@ -476,25 +425,25 @@ async function launchGame(gameId) {
                     player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
                 }
                 
-                // Lógica para enviar os dados de sincronização
-                if (currentConnection && currentConnection.open && now - lastSentTime > 100) {
-                    currentConnection.send({
-                        type: 'update',
-                        pos: player.position,
-                        rot: player.rotationQuaternion
-                    });
-                    lastSentTime = now;
+                if (currentConnection && currentConnection.open && (Date.now() - lastSentTime > 100)) {
+                    currentConnection.send({ type: 'update', pos: player.position, rot: player.rotationQuaternion });
+                    if (isHost && ball && ball.physicsImpostor) {
+                        currentConnection.send({ 
+                            type: 'ball_update', 
+                            pos: ball.position, 
+                            vel: ball.physicsImpostor.getLinearVelocity() 
+                        });
+                    }
+                    lastSentTime = Date.now();
                 }
             }
-            if(scene && scene.isReady()) scene.render();
+            if (scene && scene.isReady()) scene.render();
         });
 
         window.addEventListener("resize", () => { if(engine) engine.resize(); });
-        gameState.currentScreen = 'playing';
-        sounds.music.play();
         render();
     } catch (error) {
-        console.error("FALHA CRÍTICA AO INICIAR O JOGO:", error.message, error.stack);
+        console.error("FALHA CRÍTICA AO INICIAR O JOGO:", error);
         gameState.currentScreen = 'menu';
         render();
     }
@@ -540,31 +489,41 @@ async function launchAvatarEditor() {
 document.addEventListener('DOMContentLoaded', () => {
     initializePeer();
 
+    document.getElementById('connect-btn').onclick = () => {
+        const opponentId = document.getElementById('other-id').value;
+        if (opponentId) {
+            console.log("Tentando conectar a:", opponentId);
+            currentConnection = peer.connect(opponentId);
+            isHost = false; // Quem inicia a conexão não é o host
+            setupConnectionEvents();
+        }
+    };
+
     appContainer.addEventListener('click', (event) => {
         const target = event.target;
         const gameCard = target.closest('.game-card');
         const navItem = target.closest('.nav-item');
 
         if (gameCard) {
-            sounds.click.play();
-            gsap.to(gameCard, { scale: 0.95, yoyo: true, repeat: 1, duration: 0.1,
-                onComplete: () => launchGame(gameCard.dataset.gameId)
-            });
+            const gameId = gameCard.dataset.gameId;
+            if (currentConnection && currentConnection.open && isHost) {
+                currentConnection.send({ type: 'start_game', gameId: gameId });
+            }
+            launchGame(gameId);
             return;
         }
         
         if (navItem) {
-            sounds.click.play();
             const navAction = navItem.dataset.nav;
-
             if (navAction === "avatar") {
                 launchAvatarEditor();
             } else if (navAction === "home") {
-                 stopAvatarEditor(engine);
+                 if (engine) {
+                    engine.stopRenderLoop();
+                    engine.getScene()?.dispose();
+                }
                  gameState.currentScreen = 'menu';
                  render();
-            } else if (navAction === "multiplayer") {
-                startMatchmaking();
             }
             return;
         }
