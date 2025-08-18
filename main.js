@@ -195,7 +195,7 @@ const appContainer = document.getElementById('app');
 const canvas = document.getElementById('renderCanvas');
 const joystickZone = document.getElementById('joystickZone');
 let engine;
-let currentScene = null; // <<<===== VARIÁVEL GLOBAL PARA A CENA
+let currentScene = null;
 let player;
 let opponent = null;
 let ball = null;
@@ -244,24 +244,31 @@ function setupConnectionEvents() {
             return;
         }
 
-        // <<<===== CORREÇÃO: Usamos nossa variável global 'currentScene'
         const scene = currentScene;
         if (!scene) {
             return;
         }
         
+        // ========= INÍCIO DA CORREÇÃO DEFINITIVA =========
         if (data.type === 'ready' && !opponent) {
             console.log("Oponente está pronto. Criando seu personagem.");
             opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
             opponent.rotationQuaternion = new BABYLON.Quaternion();
             const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
+            
             if (data.texture) {
-                opponentMaterial.diffuseTexture = new BABYLON.Texture(data.texture, scene);
+                // A textura é uma data URL: "data:image/png;base64,iVBORw0K..."
+                // Precisamos extrair apenas a parte do base64 após a vírgula.
+                const rawBase64 = data.texture.split(',')[1];
+                // Usamos a função correta do Babylon.js para carregar a textura a partir da string.
+                opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", scene);
             } else {
+                // Se o oponente não tiver uma textura salva, ele fica vermelho.
                 opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
             }
             opponent.material = opponentMaterial;
         }
+        // ========= FIM DA CORREÇÃO DEFINITIVA =========
         else if (data.type === 'update' && opponent) {
             const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
             const targetRot = new BABYLON.Quaternion(data.rot._x, data.rot._y, data.rot._z, data.rot._w);
@@ -288,7 +295,7 @@ function setupConnectionEvents() {
         if (gameState.currentScreen.startsWith('playing')) {
             if (engine) {
                 engine.stopRenderLoop();
-                currentScene?.dispose(); // <<<===== CORREÇÃO: Limpa a cena
+                currentScene?.dispose();
                 currentScene = null;
             }
             gameState.currentScreen = 'menu';
@@ -366,7 +373,7 @@ async function launchGame(gameId) {
 
     if (engine) {
         engine.stopRenderLoop();
-        currentScene?.dispose(); // <<<===== CORREÇÃO: Limpa a cena anterior
+        currentScene?.dispose();
         currentScene = null;
     }
 
@@ -398,7 +405,7 @@ async function launchGame(gameId) {
         }
         
         const scene = gameData.scene;
-        currentScene = scene; // <<<===== CORREÇÃO: Guarda a cena na variável global
+        currentScene = scene;
         player = gameData.player;
         player.moveDirection = new BABYLON.Vector3(0, 0, 0);
         
@@ -477,7 +484,7 @@ async function launchAvatarEditor() {
 
     if (engine) {
         engine.stopRenderLoop();
-        currentScene?.dispose(); // <<<===== CORREÇÃO: Limpa a cena
+        currentScene?.dispose();
         currentScene = null;
     }
 
@@ -487,7 +494,7 @@ async function launchAvatarEditor() {
         }
         
         const editorData = await startAvatarEditor(engine, canvas);
-        currentScene = editorData.scene; // <<<===== CORREÇÃO: Guarda a cena do editor
+        currentScene = editorData.scene;
         gameState.editor.scene = editorData.scene;
         gameState.editor.avatar = editorData.avatar;
         gameState.editor.texture = editorData.texture;
@@ -548,7 +555,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (navAction === "home") {
                  if (engine) {
                     engine.stopRenderLoop();
-                    currentScene?.dispose(); // <<<===== CORREÇÃO: Limpa a cena
+                    currentScene?.dispose();
                     currentScene = null;
                 }
                  gameState.currentScreen = 'menu';
@@ -583,7 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (backBtn) {
                 if (engine) {
                     engine.stopRenderLoop();
-                    currentScene?.dispose(); // <<<===== CORREÇÃO: Limpa a cena
+                    currentScene?.dispose();
                     currentScene = null;
                 }
                 gameState.currentScreen = 'menu';
