@@ -235,6 +235,9 @@ function initializePeer() {
     });
 }
 
+// =======================================================
+// 2. SUBSTITUA ESTA FUNÇÃO (CORREÇÃO NO RECEBIMENTO DE DADOS)
+// =======================================================
 function setupConnectionEvents() {
     currentConnection.on('open', () => {
         console.log("CONEXÃO P2P ESTABELECIDA! Aguardando o Host escolher um jogo.");
@@ -251,28 +254,21 @@ function setupConnectionEvents() {
         }
 
         if (data.type === 'ready') {
-            console.log("Mensagem 'ready' recebida do oponente.");
             if (!scene) {
                 console.error("ERRO CRÍTICO: A cena do jogo (currentScene) ainda não existe! O oponente não pode ser criado.");
                 return;
             }
-            if (opponent) {
-                console.warn("Oponente já existe. Ignorando mensagem 'ready' duplicada.");
-                return;
-            }
+            if (opponent) return;
 
-            console.log("Cena está pronta. Criando personagem do oponente...");
             opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
             opponent.rotationQuaternion = new BABYLON.Quaternion();
             const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
 
             try {
                 if (data.texture && data.texture.includes('base64')) {
-                    console.log("Textura do oponente encontrada. Processando...");
                     const rawBase64 = data.texture.split(',')[1];
                     opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", scene);
                 } else {
-                    console.log("Oponente sem textura. Usando cor vermelha padrão.");
                     opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
                 }
             } catch (textureError) {
@@ -281,17 +277,19 @@ function setupConnectionEvents() {
             }
             
             opponent.material = opponentMaterial;
-            console.log("Personagem do oponente criado com sucesso.");
         }
+        // ================== A CORREÇÃO ESTÁ AQUI ==================
         else if (data.type === 'update' && opponent) {
-            const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
-            const targetRot = new BABYLON.Quaternion(data.rot._x, data.rot._y, data.rot._z, data.rot._w);
+            // Lemos os dados do objeto simples
+            const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
+            const targetRot = new BABYLON.Quaternion(data.rot.x, data.rot.y, data.rot.z, data.rot.w);
             opponent.position = BABYLON.Vector3.Lerp(opponent.position, targetPos, 0.2);
             opponent.rotationQuaternion = BABYLON.Quaternion.Slerp(opponent.rotationQuaternion, targetRot, 0.2);
         }
         else if (data.type === 'ball_update' && ball && !isHost) {
-            const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
-            const targetVel = new BABYLON.Vector3(data.vel._x, data.vel._y, data.vel._z);
+            // Lemos os dados do objeto simples
+            const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
+            const targetVel = new BABYLON.Vector3(data.vel.x, data.vel.y, data.vel.z);
             ball.position = BABYLON.Vector3.Lerp(ball.position, targetPos, 0.5);
             ball.physicsImpostor.setLinearVelocity(targetVel);
         }
@@ -302,7 +300,6 @@ function setupConnectionEvents() {
     });
 
     currentConnection.on('close', () => {
-        console.warn("AVISO: Oponente desconectou.");
         alert("Oponente desconectou.");
         if (opponent) opponent.dispose();
         opponent = null;
@@ -322,19 +319,6 @@ function setupConnectionEvents() {
         console.error("ERRO NA CONEXÃO P2P:", err);
     });
 }
-
-// =======================================================
-// CORREÇÃO: DEFINIÇÃO DA VARIÁVEL 'keys' E EVENT LISTENERS
-// =======================================================
-const keys = { w: false, a: false, s: false, d: false, ' ': false };
-window.addEventListener('keydown', (event) => {
-    const key = event.key.toLowerCase();
-    if (keys.hasOwnProperty(key)) keys[key] = true;
-});
-window.addEventListener('keyup', (event) => {
-    const key = event.key.toLowerCase();
-    if (keys.hasOwnProperty(key)) keys[key] = false;
-});
 
 function render() {
     canvas.classList.add('hidden');
