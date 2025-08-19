@@ -231,36 +231,70 @@ function initializePeer() {
     peer.on('error', (err) => console.error("Erro no PeerJS:", err));
 }
 
+// =======================================================
+// COLE ESTA FUNÇÃO COMPLETA SUBSTITUINDO A ANTIGA
+// =======================================================
 function setupConnectionEvents() {
     currentConnection.on('open', () => {
-        console.log("CONEXÃO P2P ESTABELECIDA!");
-        alert("Conectado! O Host deve escolher um jogo para começar a partida.");
+        console.log("CONEXÃO P2P ESTABELECIDA! Aguardando o Host escolher um jogo.");
+        // Removido o alert daqui para não interromper o fluxo
         closeConnectionUI();
     });
 
     currentConnection.on('data', (data) => {
-        // ========= INÍCIO DA CORREÇÃO DEFINITIVA =========
-if (data.type === 'ready' && !opponent) {
-    console.log("Oponente está pronto. Criando seu personagem.");
-    opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
-    opponent.rotationQuaternion = new BABYLON.Quaternion();
-    const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
-    
-    if (data.texture) {
-        // A textura é uma data URL no formato: "data:image/png;base64,iVBORw0K..."
-        // Precisamos extrair apenas a parte do base64 após a vírgula.
-        const rawBase64 = data.texture.split(',')[1];
-        
-        // Usamos a função correta do Babylon.js para carregar a textura a partir da string extraída.
-        opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", scene);
-    } else {
-        // Se o oponente não tiver uma textura salva, ele fica vermelho.
-        opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
-    }
-    opponent.material = opponentMaterial;
-}
-// ========= FIM DA CORREÇÃO DEFINITIVA =========
-        // ========= FIM DA CORREÇÃO DEFINITIVA =========
+        // Log para ver TUDO que está sendo recebido
+        console.log('Dados recebidos:', data);
+
+        const scene = currentScene; // Pega a cena atual
+
+        // ================== PONTO CRÍTICO DA ANÁLISE ==================
+        if (data.type === 'ready') {
+            console.log("Mensagem 'ready' recebida. Verificando se a cena está pronta...");
+
+            // PROTEÇÃO CONTRA RACE CONDITION: A cena existe?
+            if (!scene) {
+                console.error("ERRO CRÍTICO: A cena do jogo (currentScene) ainda não existe quando a mensagem 'ready' foi recebida! O oponente não pode ser criado.");
+                // Aqui você pode querer guardar os dados do oponente para criá-lo mais tarde
+                return; // Impede a execução do resto do código
+            }
+
+            console.log("A cena existe. Tentando criar o oponente.");
+            
+            // Garante que o oponente não seja criado duas vezes
+            if (opponent) {
+                console.warn("Oponente já existe. Ignorando mensagem 'ready' duplicada.");
+                return;
+            }
+
+            opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
+            opponent.rotationQuaternion = new BABYLON.Quaternion();
+            const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
+
+            // Tenta carregar a textura dentro de um bloco try...catch para capturar QUALQUER erro
+            try {
+                if (data.texture && data.texture.includes('base64')) {
+                    console.log("Textura do oponente encontrada. Processando...");
+                    const rawBase64 = data.texture.split(',')[1];
+                    opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", scene);
+                } else {
+                    console.log("Oponente não tem textura customizada. Usando cor vermelha padrão.");
+                    opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
+                }
+            } catch (textureError) {
+                // Se o "Script error" for aqui, NÓS VAMOS VER!
+                console.error("!!!!!!!! FALHA AO PROCESSAR A TEXTURA DO OPONENTE !!!!!!!!", textureError);
+                opponentMaterial.diffuseColor = new BABYLON.Color3.Red(); // Usa cor vermelha como fallback
+            }
+            
+            opponent.material = opponentMaterial;
+            console.log("Personagem do oponente criado com sucesso na cena.");
+        }
+        // ================== FIM DO PONTO CRÍTICO ==================
+
+        else if (data.type === 'start_game') {
+            console.log(`Host iniciou o jogo: ${data.gameId}. Carregando...`);
+            launchGame(data.gameId);
+        }
         else if (data.type === 'update' && opponent) {
             const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
             const targetRot = new BABYLON.Quaternion(data.rot._x, data.rot._y, data.rot._z, data.rot._w);
@@ -295,18 +329,6 @@ if (data.type === 'ready' && !opponent) {
         }
     });
 }
-
-
-const keys = { w: false, a: false, s: false, d: false, ' ': false };
-window.addEventListener('keydown', (event) => {
-    const key = event.key.toLowerCase();
-    if (keys.hasOwnProperty(key)) keys[key] = true;
-});
-window.addEventListener('keyup', (event) => {
-    const key = event.key.toLowerCase();
-    if (keys.hasOwnProperty(key)) keys[key] = false;
-});
-
 function render() {
     canvas.classList.add('hidden');
     joystickZone.classList.add('hidden');
