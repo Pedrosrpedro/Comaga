@@ -1,5 +1,9 @@
 // =======================================================
-// SEÇÃO 1: FUNÇÕES GLOBAIS DE UI (CONSOLE E CONEXÃO)
+// === CÓDIGO COMPLETO DO JOGO COM MULTIPLAYER SOCKET.IO ===
+// =======================================================
+
+// =======================================================
+// SEÇÃO 1: FUNÇÕES GLOBAIS DE UI (CONSOLE)
 // =======================================================
 function toggleConsole() {
     document.getElementById('mobile-console').classList.toggle('hidden');
@@ -9,13 +13,6 @@ function closeConsole() {
 }
 function clearConsole() {
     document.getElementById('console-log-container').innerHTML = '';
-}
-
-function toggleConnectionUI() {
-    document.getElementById('connection-ui').classList.toggle('hidden');
-}
-function closeConnectionUI() {
-    document.getElementById('connection-ui').classList.add('hidden');
 }
 
 
@@ -197,100 +194,86 @@ const joystickZone = document.getElementById('joystickZone');
 let engine;
 let currentScene = null;
 let player;
-let opponent = null;
 let ball = null;
-let isHost = false;
+
+// ALTERADO: Variáveis de Multiplayer para Socket.IO
+let isHost = false; 
+let socket; 
+let opponents = {}; // Objeto para guardar os meshes de todos os oponentes
+
 let moveX = 0;
 let moveZ = 0;
-let peer;
-let currentConnection;
+
 
 // =======================================================
-// LÓGICA DE MULTIPLAYER
+// NOVO: LÓGICA DE MULTIPLAYER COM SOCKET.IO
 // =======================================================
-function initializePeer() {
-    if (typeof Peer === 'undefined') {
-        console.error("PeerJS não foi carregado.");
-        return;
-    }
+function initializeSocketIO() {
+    // <-- MUDANÇA MAIS IMPORTANTE: COLOQUE A URL DO SEU SERVIDOR REPLIT AQUI!
+    const serverUrl = "https://Teste-multiplayer.SEU-USUARIO.replit.dev"; // Exemplo! Troque pela sua URL!
+    
+    console.log("Tentando conectar ao servidor:", serverUrl);
+    socket = io(serverUrl);
 
-    peer = new Peer();
-    peer.on('open', (id) => {
-        console.log("Meu ID PeerJS é:", id);
-        document.getElementById('my-id').textContent = id;
+    socket.on('connect', () => {
+        console.log("Conectado ao servidor com sucesso! Meu ID é:", socket.id);
+    });
+    
+    socket.on('connect_error', (err) => {
+        console.error("Falha ao conectar ao servidor:", err.message);
     });
 
-    peer.on('connection', (conn) => {
-        console.log("Um jogador se conectou a nós!");
-        currentConnection = conn;
-        isHost = true;
-        setupConnectionEvents();
-    });
+    socket.on('opponentUpdate', (data) => {
+        if (!currentScene) return;
 
-    peer.on('error', (err) => console.error("Erro no PeerJS:", err));
-}
-
-function setupConnectionEvents() {
-    currentConnection.on('open', () => {
-        console.log("CONEXÃO P2P ESTABELECIDA!");
-        closeConnectionUI();
-    });
-
-    currentConnection.on('data', (data) => {
-        if (!currentScene) {
-            return;
-        }
-        
-        if (data.type === 'start_game') {
-            launchGame(data.gameId);
-            return;
-        }
-
-        if (data.type === 'ready' && !opponent) {
-            opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, currentScene);
+        // Se o oponente ainda não existe, cria ele
+        if (!opponents[data.id]) {
+            console.log("Um novo oponente apareceu:", data.id);
+            const opponent = BABYLON.MeshBuilder.CreateCapsule("opponent_" + data.id, { height: 2, radius: 0.5 }, currentScene);
             opponent.rotationQuaternion = new BABYLON.Quaternion();
-            const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", currentScene);
+            const opponentMaterial = new BABYLON.StandardMaterial("opponentMat_" + data.id, currentScene);
             
             if (data.texture && data.texture.includes('base64')) {
                 const rawBase64 = data.texture.split(',')[1];
-                opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", currentScene);
+                opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture_" + data.id, currentScene);
             } else {
                 opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
             }
             opponent.material = opponentMaterial;
+            opponents[data.id] = opponent; // Guarda o oponente no nosso objeto de controle
         }
-        else if (data.type === 'update' && opponent) {
-            // **CORREÇÃO: Recria os vetores a partir dos dados simples recebidos**
+        
+        // Atualiza a posição e rotação do oponente
+        const opponentMesh = opponents[data.id];
+        if (opponentMesh) {
             const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
             const targetRot = new BABYLON.Quaternion(data.rot.x, data.rot.y, data.rot.z, data.rot.w);
-            opponent.position = BABYLON.Vector3.Lerp(opponent.position, targetPos, 0.2);
-            opponent.rotationQuaternion = BABYLON.Quaternion.Slerp(opponent.rotationQuaternion, targetRot, 0.2);
+            opponentMesh.position = BABYLON.Vector3.Lerp(opponentMesh.position, targetPos, 0.2);
+            opponentMesh.rotationQuaternion = BABYLON.Quaternion.Slerp(opponentMesh.rotationQuaternion, targetRot, 0.2);
         }
-        else if (data.type === 'ball_update' && ball && !isHost) {
-            // **CORREÇÃO: Recria os vetores a partir dos dados simples recebidos**
+    });
+    
+    socket.on('opponentBallUpdate', (data) => {
+        if (ball && ball.physicsImpostor && !isHost) {
             const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
             const targetVel = new BABYLON.Vector3(data.vel.x, data.vel.y, data.vel.z);
             ball.position = BABYLON.Vector3.Lerp(ball.position, targetPos, 0.5);
             ball.physicsImpostor.setLinearVelocity(targetVel);
         }
-        else if (data.type === 'score_update') {
-            gameState.score = data.score;
-            render();
+    });
+
+    socket.on('playerDisconnected', (id) => {
+        console.log("Oponente desconectou:", id);
+        if (opponents[id]) {
+            opponents[id].dispose(); // Remove o mesh da cena
+            delete opponents[id]; // Remove do nosso objeto de controle
         }
     });
 
-    currentConnection.on('close', () => {
-        alert("Oponente desconectou.");
-        if (opponent) opponent.dispose();
-        opponent = null;
-        currentConnection = null;
-        if (gameState.currentScreen.startsWith('playing')) {
-            if (engine) engine.stopRenderLoop();
-            if (currentScene) currentScene.dispose();
-            currentScene = null;
-            gameState.currentScreen = 'menu';
-            render();
-        }
+    socket.on('gameStarted', (data) => {
+        console.log("Recebemos ordem do host para iniciar o jogo:", data.gameId);
+        isHost = false; // Se recebemos essa ordem, não somos o host
+        launchGame(data.gameId);
     });
 }
 
@@ -354,8 +337,13 @@ function setupJoystick() {
 }
 
 async function launchGame(gameId) {
+    // Limpa o estado dos oponentes anteriores
+    for (const id in opponents) {
+        if(opponents[id]) opponents[id].dispose();
+    }
+    opponents = {};
+    
     gameState.score = { blue: 0, red: 0 };
-    opponent = null;
     ball = null;
     gameState.currentScreen = 'loading';
     render();
@@ -382,10 +370,6 @@ async function launchGame(gameId) {
                 ball.position = new BABYLON.Vector3(0, 5, 0);
                 ball.physicsImpostor.setLinearVelocity(BABYLON.Vector3.Zero());
                 ball.physicsImpostor.setAngularVelocity(BABYLON.Vector3.Zero());
-
-                if (isHost && currentConnection) {
-                    currentConnection.send({ type: 'score_update', score: gameState.score });
-                }
             });
             ball = gameData.ball;
         } else {
@@ -400,11 +384,6 @@ async function launchGame(gameId) {
         render(); // Mostra a UI do jogo
         setupJoystick();
         
-        if (currentConnection) {
-            const myTexture = localStorage.getItem("playerAvatarTexture");
-            currentConnection.send({ type: 'ready', texture: myTexture });
-        }
-        
         let lastSentTime = 0;
         engine.runRenderLoop(() => {
             if (!player || !player.physicsImpostor || !currentScene || !currentScene.activeCamera) return;
@@ -413,7 +392,7 @@ async function launchGame(gameId) {
             const playerSpeed = 7.5;
             const jumpForce = 6;
             const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
-            const hit = currentScene.pickWithRay(ray, (mesh) => mesh.name !== "player" && mesh.name !== "opponent");
+            const hit = currentScene.pickWithRay(ray, (mesh) => mesh.name !== "player" && !mesh.name.startsWith("opponent"));
             const isOnGround = hit.hit;
 
             if (keys[' '] && isOnGround) {
@@ -447,18 +426,19 @@ async function launchGame(gameId) {
                 player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
             }
             
-            if (currentConnection && currentConnection.open && (Date.now() - lastSentTime > 100)) {
-                // **CORREÇÃO: Envia objetos simples com os dados**
+            // ALTERADO: Lógica de envio de dados para o servidor Socket.IO
+            if (socket && socket.connected && (Date.now() - lastSentTime > 100)) {
                 const simplePos = { x: player.position.x, y: player.position.y, z: player.position.z };
                 const simpleRot = { x: player.rotationQuaternion.x, y: player.rotationQuaternion.y, z: player.rotationQuaternion.z, w: player.rotationQuaternion.w };
-                currentConnection.send({ type: 'update', pos: simplePos, rot: simpleRot });
+                const myTexture = localStorage.getItem("playerAvatarTexture");
+                
+                socket.emit('playerUpdate', { pos: simplePos, rot: simpleRot, texture: myTexture });
 
                 if (isHost && ball && ball.physicsImpostor) {
                     const ballVel = ball.physicsImpostor.getLinearVelocity();
                     const simpleBallPos = { x: ball.position.x, y: ball.position.y, z: ball.position.z };
                     const simpleBallVel = { x: ballVel.x, y: ballVel.y, z: ballVel.z };
-                    currentConnection.send({ 
-                        type: 'ball_update', 
+                    socket.emit('ballUpdate', { 
                         pos: simpleBallPos, 
                         vel: simpleBallVel
                     });
@@ -515,17 +495,8 @@ async function launchAvatarEditor() {
 // SEÇÃO 6: INICIALIZAÇÃO E EVENT LISTENERS
 // =======================================================
 document.addEventListener('DOMContentLoaded', () => {
-    initializePeer();
-
-    document.getElementById('connect-btn').onclick = () => {
-        const opponentId = document.getElementById('other-id').value;
-        if (opponentId) {
-            console.log("Tentando conectar a:", opponentId);
-            currentConnection = peer.connect(opponentId);
-            isHost = false; 
-            setupConnectionEvents();
-        }
-    };
+    // NOVO: Inicializa a conexão com o servidor Socket.IO
+    initializeSocketIO();
 
     appContainer.addEventListener('click', (event) => {
         const target = event.target;
@@ -535,16 +506,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gameCard) {
             const gameId = gameCard.dataset.gameId;
 
-            if (currentConnection && currentConnection.open) {
-                if (isHost) {
-                    currentConnection.send({ type: 'start_game', gameId: gameId });
-                    launchGame(gameId);
-                } else {
-                    alert("Apenas o Host (o jogador que recebeu a conexão) pode iniciar o jogo.");
-                }
-            } else {
-                launchGame(gameId);
+            // ALTERADO: Lógica para iniciar o jogo
+            console.log("Clicou para iniciar o jogo. Eu serei o Host!");
+            isHost = true; // Quem clica no botão se torna o Host
+            
+            // Avisa o servidor que estamos começando o jogo, para que ele avise os outros jogadores
+            if(socket && socket.connected) {
+                socket.emit('hostStartedGame', { gameId: gameId });
             }
+
+            // Inicia o jogo para nós mesmos imediatamente
+            launchGame(gameId);
             return;
         }
         
@@ -598,7 +570,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (saveBtn) {
                 const base64Canvas = gameState.editor.texture.getContext().canvas.toDataURL();
-                // **LINHA CORRIGIDA**
                 localStorage.setItem("playerAvatarTexture", base64Canvas);
                 alert("Avatar salvo!");
             }
