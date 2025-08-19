@@ -202,98 +202,86 @@ let ball = null;
 let isHost = false;
 let moveX = 0;
 let moveZ = 0;
-
-// =======================================================
-// LÓGICA DE MULTIPLAYER (CÓPIA DE ID)
-// =======================================================
 let peer;
 let currentConnection;
 
+// =======================================================
+// LÓGICA DE MULTIPLAYER COM LOGS DETALHADOS
+// =======================================================
 function initializePeer() {
     if (typeof Peer === 'undefined') {
-        console.error("PeerJS não foi carregado.");
+        console.error("PeerJS não foi carregado. Verifique a conexão com a internet ou o script da biblioteca.");
         return;
     }
 
+    console.log("Conectando ao servidor PeerJS...");
     peer = new Peer();
+
     peer.on('open', (id) => {
-        console.log("Meu ID PeerJS é:", id);
+        console.log(`SUCESSO: Conectado ao servidor PeerJS com ID: ${id}`);
         document.getElementById('my-id').textContent = id;
     });
 
     peer.on('connection', (conn) => {
-        console.log("Um jogador se conectou a nós!");
+        console.log("NOVA CONEXÃO: Um jogador está tentando se conectar a nós.");
         currentConnection = conn;
         isHost = true;
         setupConnectionEvents();
     });
 
-    peer.on('error', (err) => console.error("Erro no PeerJS:", err));
+    peer.on('error', (err) => {
+        console.error(`ERRO DE REDE: Falha na conexão PeerJS. Tipo: ${err.type}`);
+        alert(`Erro de conexão: ${err.type}. Verifique sua conexão com a internet ou tente novamente.`);
+    });
 }
 
-// =======================================================
-// COLE ESTA FUNÇÃO COMPLETA SUBSTITUINDO A ANTIGA
-// =======================================================
 function setupConnectionEvents() {
     currentConnection.on('open', () => {
         console.log("CONEXÃO P2P ESTABELECIDA! Aguardando o Host escolher um jogo.");
-        // Removido o alert daqui para não interromper o fluxo
         closeConnectionUI();
     });
 
     currentConnection.on('data', (data) => {
-        // Log para ver TUDO que está sendo recebido
-        console.log('Dados recebidos:', data);
+        const scene = currentScene;
+        
+        if (data.type === 'start_game') {
+            console.log(`Comando recebido para iniciar o jogo: ${data.gameId}`);
+            launchGame(data.gameId);
+            return;
+        }
 
-        const scene = currentScene; // Pega a cena atual
-
-        // ================== PONTO CRÍTICO DA ANÁLISE ==================
         if (data.type === 'ready') {
-            console.log("Mensagem 'ready' recebida. Verificando se a cena está pronta...");
-
-            // PROTEÇÃO CONTRA RACE CONDITION: A cena existe?
+            console.log("Mensagem 'ready' recebida do oponente.");
             if (!scene) {
-                console.error("ERRO CRÍTICO: A cena do jogo (currentScene) ainda não existe quando a mensagem 'ready' foi recebida! O oponente não pode ser criado.");
-                // Aqui você pode querer guardar os dados do oponente para criá-lo mais tarde
-                return; // Impede a execução do resto do código
+                console.error("ERRO CRÍTICO: A cena do jogo (currentScene) ainda não existe! O oponente não pode ser criado.");
+                return;
             }
-
-            console.log("A cena existe. Tentando criar o oponente.");
-            
-            // Garante que o oponente não seja criado duas vezes
             if (opponent) {
                 console.warn("Oponente já existe. Ignorando mensagem 'ready' duplicada.");
                 return;
             }
 
+            console.log("Cena está pronta. Criando personagem do oponente...");
             opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
             opponent.rotationQuaternion = new BABYLON.Quaternion();
             const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
 
-            // Tenta carregar a textura dentro de um bloco try...catch para capturar QUALQUER erro
             try {
                 if (data.texture && data.texture.includes('base64')) {
                     console.log("Textura do oponente encontrada. Processando...");
                     const rawBase64 = data.texture.split(',')[1];
                     opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", scene);
                 } else {
-                    console.log("Oponente não tem textura customizada. Usando cor vermelha padrão.");
+                    console.log("Oponente sem textura. Usando cor vermelha padrão.");
                     opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
                 }
             } catch (textureError) {
-                // Se o "Script error" for aqui, NÓS VAMOS VER!
-                console.error("!!!!!!!! FALHA AO PROCESSAR A TEXTURA DO OPONENTE !!!!!!!!", textureError);
-                opponentMaterial.diffuseColor = new BABYLON.Color3.Red(); // Usa cor vermelha como fallback
+                console.error("FALHA AO PROCESSAR A TEXTURA DO OPONENTE!", textureError);
+                opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
             }
             
             opponent.material = opponentMaterial;
-            console.log("Personagem do oponente criado com sucesso na cena.");
-        }
-        // ================== FIM DO PONTO CRÍTICO ==================
-
-        else if (data.type === 'start_game') {
-            console.log(`Host iniciou o jogo: ${data.gameId}. Carregando...`);
-            launchGame(data.gameId);
+            console.log("Personagem do oponente criado com sucesso.");
         }
         else if (data.type === 'update' && opponent) {
             const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
@@ -314,6 +302,7 @@ function setupConnectionEvents() {
     });
 
     currentConnection.on('close', () => {
+        console.warn("AVISO: Oponente desconectou.");
         alert("Oponente desconectou.");
         if (opponent) opponent.dispose();
         opponent = null;
@@ -328,7 +317,25 @@ function setupConnectionEvents() {
             render();
         }
     });
+
+    currentConnection.on('error', (err) => {
+        console.error("ERRO NA CONEXÃO P2P:", err);
+    });
 }
+
+// =======================================================
+// CORREÇÃO: DEFINIÇÃO DA VARIÁVEL 'keys' E EVENT LISTENERS
+// =======================================================
+const keys = { w: false, a: false, s: false, d: false, ' ': false };
+window.addEventListener('keydown', (event) => {
+    const key = event.key.toLowerCase();
+    if (keys.hasOwnProperty(key)) keys[key] = true;
+});
+window.addEventListener('keyup', (event) => {
+    const key = event.key.toLowerCase();
+    if (keys.hasOwnProperty(key)) keys[key] = false;
+});
+
 function render() {
     canvas.classList.add('hidden');
     joystickZone.classList.add('hidden');
@@ -418,12 +425,12 @@ async function launchGame(gameId) {
             gameData = await startDisasterGame(engine, canvas, updateHud, sounds);
         }
         
-        const scene = gameData.scene;
-        currentScene = scene;
+        currentScene = gameData.scene;
         player = gameData.player;
         player.moveDirection = new BABYLON.Vector3(0, 0, 0);
         
-        if (currentConnection) {
+        if (currentConnection && currentConnection.open) {
+            console.log("Enviando mensagem 'ready' para o oponente...");
             const myTexture = localStorage.getItem("playerAvatarTexture");
             currentConnection.send({ type: 'ready', texture: myTexture });
         }
@@ -433,16 +440,16 @@ async function launchGame(gameId) {
         let lastSentTime = 0;
         engine.runRenderLoop(() => {
             if (player && player.physicsImpostor) {
-                const camera = scene.activeCamera;
+                const camera = currentScene.activeCamera;
                 const playerSpeed = 7.5;
                 const jumpForce = 6;
                 const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
-                const hit = scene.pickWithRay(ray, (mesh) => mesh.name !== "player" && mesh.name !== "opponent");
+                const hit = currentScene.pickWithRay(ray, (mesh) => mesh.name !== "player" && mesh.name !== "opponent");
                 const isOnGround = hit.hit;
                 if (keys[' '] && isOnGround) {
                     player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, jumpForce, 0), player.getAbsolutePosition());
+                    keys[' '] = false;
                 }
-                keys[' '] = false;
                 let totalMoveX = moveX;
                 let totalMoveZ = moveZ;
                 if (keys.w) totalMoveZ += 1;
@@ -479,7 +486,7 @@ async function launchGame(gameId) {
                     lastSentTime = Date.now();
                 }
             }
-            if (scene && scene.isReady()) scene.render();
+            if (currentScene && currentScene.isReady()) currentScene.render();
         });
 
         window.addEventListener("resize", () => { if(engine) engine.resize(); });
@@ -534,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('connect-btn').onclick = () => {
         const opponentId = document.getElementById('other-id').value;
         if (opponentId) {
-            console.log("Tentando conectar a:", opponentId);
+            console.log(`Tentando conectar ao ID: ${opponentId}`);
             currentConnection = peer.connect(opponentId);
             isHost = false; 
             setupConnectionEvents();
@@ -551,13 +558,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (currentConnection && currentConnection.open) {
                 if (isHost) {
+                    console.log(`HOST iniciando o jogo ${gameId} para ambos os jogadores.`);
                     currentConnection.send({ type: 'start_game', gameId: gameId });
                     launchGame(gameId);
                 } else {
                     alert("Apenas o Host (o jogador que recebeu a conexão) pode iniciar o jogo.");
+                    console.warn("CLIENTE tentou iniciar o jogo. Ação bloqueada.");
                 }
             } else {
-                launchGame(gameId);
+                launchGame(gameId); // Modo single player
             }
             return;
         }
