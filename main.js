@@ -385,13 +385,17 @@ function setupJoystick() {
     });
 }
 
+// =======================================================
+// SUBSTITUA APENAS ESTA FUNÇÃO
+// =======================================================
 async function launchGame(gameId) {
     gameState.score = { blue: 0, red: 0 };
     opponent = null;
     ball = null;
     gameState.currentScreen = 'loading';
-    render();
+    render(); // Mostra a tela de "Carregando..."
 
+    // Limpeza da cena anterior
     if (engine) {
         engine.stopRenderLoop();
         currentScene?.dispose();
@@ -429,73 +433,86 @@ async function launchGame(gameId) {
         player = gameData.player;
         player.moveDirection = new BABYLON.Vector3(0, 0, 0);
         
+        // ================== MUDANÇA CRÍTICA NA ORDEM ==================
+        
+        // 1. PRIMEIRO, renderiza a UI do jogo para garantir que o joystickZone esteja visível.
+        render();
+        window.addEventListener("resize", () => { if(engine) engine.resize(); });
+
+        // 2. SEGUNDO, agora que o joystickZone está visível, configure o joystick.
+        try {
+            setupJoystick();
+        } catch(joystickError) {
+            console.error("FALHA AO INICIAR O JOYSTICK:", joystickError);
+        }
+        
+        // 3. TERCEIRO, envie a mensagem que está pronto.
         if (currentConnection && currentConnection.open) {
             console.log("Enviando mensagem 'ready' para o oponente...");
             const myTexture = localStorage.getItem("playerAvatarTexture");
             currentConnection.send({ type: 'ready', texture: myTexture });
         }
         
-        setupJoystick();
-        
+        // 4. FINALMENTE, inicie o loop de renderização do jogo.
         let lastSentTime = 0;
         engine.runRenderLoop(() => {
-            if (player && player.physicsImpostor) {
-                const camera = currentScene.activeCamera;
-                const playerSpeed = 7.5;
-                const jumpForce = 6;
-                const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
-                const hit = currentScene.pickWithRay(ray, (mesh) => mesh.name !== "player" && mesh.name !== "opponent");
-                const isOnGround = hit.hit;
-                if (keys[' '] && isOnGround) {
-                    player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, jumpForce, 0), player.getAbsolutePosition());
-                    keys[' '] = false;
-                }
-                let totalMoveX = moveX;
-                let totalMoveZ = moveZ;
-                if (keys.w) totalMoveZ += 1;
-                if (keys.s) totalMoveZ -= 1;
-                if (keys.a) totalMoveX -= 1;
-                if (keys.d) totalMoveX += 1;
-                const cameraForward = camera.getDirection(BABYLON.Vector3.Forward());
-                const cameraRight = camera.getDirection(BABYLON.Vector3.Right());
-                cameraForward.y = 0;
-                cameraRight.y = 0;
-                cameraForward.normalize();
-                cameraRight.normalize();
-                const moveDirection = cameraRight.scale(totalMoveX).add(cameraForward.scale(totalMoveZ));
-                const currentVelocity = player.physicsImpostor.getLinearVelocity();
-                if (moveDirection.lengthSquared() > 0) {
-                    moveDirection.normalize();
-                    player.moveDirection.copyFrom(moveDirection);
-                    const newVelocity = moveDirection.scale(playerSpeed);
-                    player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVelocity.x, currentVelocity.y, newVelocity.z));
-                } else {
-                    player.moveDirection.set(0, 0, 0); 
-                    player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
-                }
-                
-                if (currentConnection && currentConnection.open && (Date.now() - lastSentTime > 100)) {
-                    currentConnection.send({ type: 'update', pos: player.position, rot: player.rotationQuaternion });
-                    if (isHost && ball && ball.physicsImpostor) {
-                        currentConnection.send({ 
-                            type: 'ball_update', 
-                            pos: ball.position, 
-                            vel: ball.physicsImpostor.getLinearVelocity() 
-                        });
-                    }
-                    lastSentTime = Date.now();
-                }
+            if (!currentScene || !player || !player.physicsImpostor) return; // Proteção extra
+
+            const camera = currentScene.activeCamera;
+            if (!camera) return; // Proteção extra
+
+            const playerSpeed = 7.5;
+            const jumpForce = 6;
+            const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
+            const hit = currentScene.pickWithRay(ray, (mesh) => mesh.name !== "player" && mesh.name !== "opponent");
+            const isOnGround = hit.hit;
+            if (keys[' '] && isOnGround) {
+                player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, jumpForce, 0), player.getAbsolutePosition());
+                keys[' '] = false;
             }
+            let totalMoveX = moveX;
+            let totalMoveZ = moveZ;
+            if (keys.w) totalMoveZ += 1;
+            if (keys.s) totalMoveZ -= 1;
+            if (keys.a) totalMoveX -= 1;
+            if (keys.d) totalMoveX += 1;
+            const cameraForward = camera.getDirection(BABYLON.Vector3.Forward());
+            const cameraRight = camera.getDirection(BABYLON.Vector3.Right());
+            cameraForward.y = 0;
+            cameraRight.y = 0;
+            cameraForward.normalize();
+            cameraRight.normalize();
+            const moveDirection = cameraRight.scale(totalMoveX).add(cameraForward.scale(totalMoveZ));
+            const currentVelocity = player.physicsImpostor.getLinearVelocity();
+            if (moveDirection.lengthSquared() > 0) {
+                moveDirection.normalize();
+                player.moveDirection.copyFrom(moveDirection);
+                const newVelocity = moveDirection.scale(playerSpeed);
+                player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVelocity.x, currentVelocity.y, newVelocity.z));
+            } else {
+                player.moveDirection.set(0, 0, 0); 
+                player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
+            }
+            
+            if (currentConnection && currentConnection.open && (Date.now() - lastSentTime > 100)) {
+                currentConnection.send({ type: 'update', pos: player.position, rot: player.rotationQuaternion });
+                if (isHost && ball && ball.physicsImpostor) {
+                    currentConnection.send({ 
+                        type: 'ball_update', 
+                        pos: ball.position, 
+                        vel: ball.physicsImpostor.getLinearVelocity() 
+                    });
+                }
+                lastSentTime = Date.now();
+            }
+            
             if (currentScene && currentScene.isReady()) currentScene.render();
         });
-
-        window.addEventListener("resize", () => { if(engine) engine.resize(); });
-        render();
 
     } catch (error) {
         console.error("FALHA CRÍTICA AO INICIAR O JOGO:", error);
         gameState.currentScreen = 'menu';
-        render();
+        render(); // Volta para o menu em caso de falha
     }
 }
 
