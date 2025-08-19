@@ -214,30 +214,16 @@ let moveZ = 0;
 // =======================================================
 function initializeFirebase() {
     // <-- COLE A SUA CONFIGURAÇÃO DO FIREBASE AQUI DENTRO!
-    <script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
-
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyAchW-Gr80W-I8ROKKMuZzTEG0gOku4G9k",
-    authDomain: "teste-multiplayer-e0ccd.firebaseapp.com",
-    databaseURL: "https://teste-multiplayer-e0ccd-default-rtdb.firebaseio.com",
-    projectId: "teste-multiplayer-e0ccd",
-    storageBucket: "teste-multiplayer-e0ccd.firebasestorage.app",
-    messagingSenderId: "163391453336",
-    appId: "1:163391453336:web:e93e1a41932c848232f8ed",
-    measurementId: "G-PQEBPWSBQE"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-</script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAchW-Gr80W-I8ROKKMuZzTEG0gOku4G9k",
+      authDomain: "teste-multiplayer-e0ccd.firebaseapp.com",
+      databaseURL: "https://teste-multiplayer-e0ccd-default-rtdb.firebaseio.com",
+      projectId: "teste-multiplayer-e0ccd",
+      storageBucket: "teste-multiplayer-e0ccd.firebasestorage.app",
+      messagingSenderId: "163391453336",
+      appId: "1:163391453336:web:e93e1a41932c848232f8ed",
+      measurementId: "G-PQEBPWSBQE"
+    };
 
     // Inicializa o Firebase
     firebaseApp = firebase.initializeApp(firebaseConfig);
