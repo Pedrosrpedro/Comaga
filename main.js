@@ -210,7 +210,7 @@ let moveZ = 0;
 // =======================================================
 function initializeSocketIO() {
     // <-- MUDANÇA MAIS IMPORTANTE: COLOQUE A URL DO SEU SERVIDOR REPLIT AQUI!
-    const serverUrl = "https://Teste-multiplayer.SEU-USUARIO.replit.dev"; // Exemplo! Troque pela sua URL!
+    const serverUrl = "https://233e7f2b-8348-4a20-8e44-0ce2508b7062-00-1dv83e1ptur3y.riker.replit.dev/"; // Exemplo! Troque pela sua URL!
     
     console.log("Tentando conectar ao servidor:", serverUrl);
     socket = io(serverUrl);
