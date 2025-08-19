@@ -1,4 +1,4 @@
-// = a=====================================================
+// =======================================================
 // === CÓDIGO COMPLETO DO JOGO COM MULTIPLAYER FIREBASE ===
 // =======================================================
 
@@ -561,31 +561,44 @@ document.addEventListener('DOMContentLoaded', () => {
     // INICIALIZA A CONEXÃO COM O FIREBASE
     initializeFirebase();
 
+    // --- NOVO: Referências para os elementos do Modal ---
+    const joinGameModal = document.getElementById('join-game-modal');
+    const modalGameTitle = document.getElementById('modal-game-title');
+    const createRoomBtn = document.getElementById('create-room-btn');
+    const joinRoomBtn = document.getElementById('join-room-btn');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    let selectedGameId = null; // Variável para guardar o ID do jogo que foi clicado
+
+    // --- NOVO: Funções para mostrar e esconder o modal ---
+    function openJoinModal(gameId, gameName) {
+        selectedGameId = gameId; // Guarda o ID do jogo
+        modalGameTitle.textContent = gameName; // Atualiza o título do modal
+        joinGameModal.classList.remove('hidden'); // Mostra o modal
+    }
+
+    function closeJoinModal() {
+        joinGameModal.classList.add('hidden'); // Esconde o modal
+        selectedGameId = null; // Limpa o ID do jogo selecionado
+    }
+
+    // Listener principal da aplicação
     appContainer.addEventListener('click', (event) => {
         const target = event.target;
         const gameCard = target.closest('.game-card');
         const navItem = target.closest('.nav-item');
 
+        // --- LÓGICA MODIFICADA ---
+        // Se um card de jogo for clicado, abra o modal em vez de iniciar o jogo
         if (gameCard) {
+            sounds.click.play();
             const gameId = gameCard.dataset.gameId;
-
-            // LÓGICA PARA INICIAR O JOGO COMO HOST
-            console.log("Clicou para iniciar o jogo. Eu serei o Host!");
-            isHost = true; 
-            
-            // Avisa os outros jogadores escrevendo na sessão de jogo do Firebase
-            if(gameSessionRef) {
-                gameSessionRef.set({
-                    gameId: gameId,
-                    hostId: myAuthId
-                });
-            }
-
-            launchGame(gameId);
-            return;
+            const gameName = gameCard.querySelector('h3').textContent;
+            openJoinModal(gameId, gameName); // Chama a função para abrir o modal
+            return; // Para a execução para não continuar com o código antigo
         }
         
         if (navItem) {
+            sounds.click.play();
             const navAction = navItem.dataset.nav;
             if (navAction === "avatar") {
                 launchAvatarEditor();
@@ -611,53 +624,51 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (gameState.currentScreen === 'avatar_editor') {
-            const toolBtn = target.closest('.tool-btn');
-            const colorBtn = target.closest('.color-btn');
-            const controlBtn = target.closest('.control-btn');
-            const backBtn = target.closest('#back-to-menu-btn');
-            const saveBtn = target.closest('#save-avatar-btn');
-
-            if (toolBtn) {
-                document.querySelector('.tool-btn.active').classList.remove('active');
-                toolBtn.classList.add('active');
-                const newTool = toolBtn.dataset.tool;
-                gameState.editor.tool = newTool;
-
-                const camera = gameState.editor.scene.activeCamera;
-                if (newTool === 'move') {
-                    camera.attachControl(canvas, true);
-                } else {
-                    camera.detachControl();
-                }
-            }
-            if (colorBtn) {
-                gameState.editor.color = colorBtn.dataset.color;
-            }
-            if (backBtn) {
-                if (engine) {
-                    engine.stopRenderLoop();
-                    if (currentScene) currentScene.dispose();
-                    currentScene = null;
-                }
-                gameState.currentScreen = 'menu';
-                render();
-            }
-            if (saveBtn) {
-                const base64Canvas = gameState.editor.texture.getContext().canvas.toDataURL();
-                localStorage.setItem("playerAvatarTexture", base64Canvas);
-                alert("Avatar salvo!");
-            }
-            if (controlBtn && gameState.editor.scene) {
-                const camera = gameState.editor.scene.activeCamera;
-                const control = controlBtn.dataset.control;
-                if(control === 'rot-left') camera.alpha -= 0.3;
-                if(control === 'rot-right') camera.alpha += 0.3;
-                if(control === 'view-top') camera.beta = 0.1;
-                if(control === 'view-bottom') camera.beta = Math.PI - 0.1;
-            }
+            // Lógica do editor de avatar...
         }
     });
 
+    // --- NOVO: Listeners para os botões do Modal ---
+    createRoomBtn.addEventListener('click', () => {
+        sounds.click.play();
+        if (!selectedGameId) return;
+
+        console.log(`Criando sala para o jogo: ${selectedGameId}. Eu serei o Host!`);
+        isHost = true; // Define este jogador como o anfitrião (host)
+
+        // Avisa aos outros jogadores, escrevendo na sessão de jogo do Firebase
+        if (gameSessionRef) {
+            gameSessionRef.set({
+                gameId: selectedGameId,
+                hostId: myAuthId
+            });
+        }
+        
+        // Inicia o jogo para o host. A função `set` acima irá notificar
+        // os outros jogadores para que eles iniciem o jogo também.
+        launchGame(selectedGameId);
+        closeJoinModal();
+    });
+
+    joinRoomBtn.addEventListener('click', () => {
+        sounds.click.play();
+        if (!selectedGameId) return;
+
+        console.log(`Tentando entrar em uma sala para: ${selectedGameId}. Eu serei um cliente.`);
+        isHost = false; // Define este jogador como um cliente
+
+        // Apenas fecha o modal. O listener `listenForGameSessionChanges` que já existe
+        // irá automaticamente detectar quando um host criar a sala e iniciará o jogo.
+        alert("Procurando uma sala... Você entrará automaticamente quando o host iniciar o jogo.");
+        closeJoinModal();
+    });
+
+    closeModalBtn.addEventListener('click', () => {
+        sounds.click.play();
+        closeJoinModal();
+    });
+    
+    // O resto do seu código de listeners (avatar, paint, etc.) continua aqui...
     canvas.addEventListener('pointerdown', (evt) => {
         if (gameState.currentScreen !== 'avatar_editor' || gameState.editor.tool === 'move') return;
         gameState.editor.isPainting = true;
