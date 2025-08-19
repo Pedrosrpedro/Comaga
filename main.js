@@ -206,88 +206,67 @@ let peer;
 let currentConnection;
 
 // =======================================================
-// LÓGICA DE MULTIPLAYER COM LOGS DETALHADOS
+// LÓGICA DE MULTIPLAYER
 // =======================================================
 function initializePeer() {
     if (typeof Peer === 'undefined') {
-        console.error("PeerJS não foi carregado. Verifique a conexão com a internet ou o script da biblioteca.");
+        console.error("PeerJS não foi carregado.");
         return;
     }
 
-    console.log("Conectando ao servidor PeerJS...");
     peer = new Peer();
-
     peer.on('open', (id) => {
-        console.log(`SUCESSO: Conectado ao servidor PeerJS com ID: ${id}`);
+        console.log("Meu ID PeerJS é:", id);
         document.getElementById('my-id').textContent = id;
     });
 
     peer.on('connection', (conn) => {
-        console.log("NOVA CONEXÃO: Um jogador está tentando se conectar a nós.");
+        console.log("Um jogador se conectou a nós!");
         currentConnection = conn;
         isHost = true;
         setupConnectionEvents();
     });
 
-    peer.on('error', (err) => {
-        console.error(`ERRO DE REDE: Falha na conexão PeerJS. Tipo: ${err.type}`);
-        alert(`Erro de conexão: ${err.type}. Verifique sua conexão com a internet ou tente novamente.`);
-    });
+    peer.on('error', (err) => console.error("Erro no PeerJS:", err));
 }
 
-// =======================================================
-// 2. SUBSTITUA ESTA FUNÇÃO (CORREÇÃO NO RECEBIMENTO DE DADOS)
-// =======================================================
 function setupConnectionEvents() {
     currentConnection.on('open', () => {
-        console.log("CONEXÃO P2P ESTABELECIDA! Aguardando o Host escolher um jogo.");
+        console.log("CONEXÃO P2P ESTABELECIDA!");
         closeConnectionUI();
     });
 
     currentConnection.on('data', (data) => {
         const scene = currentScene;
+        if (!scene) return;
         
         if (data.type === 'start_game') {
-            console.log(`Comando recebido para iniciar o jogo: ${data.gameId}`);
             launchGame(data.gameId);
             return;
         }
 
-        if (data.type === 'ready') {
-            if (!scene) {
-                console.error("ERRO CRÍTICO: A cena do jogo (currentScene) ainda não existe! O oponente não pode ser criado.");
-                return;
-            }
-            if (opponent) return;
-
+        if (data.type === 'ready' && !opponent) {
             opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
             opponent.rotationQuaternion = new BABYLON.Quaternion();
             const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
-
-            try {
-                if (data.texture && data.texture.includes('base64')) {
-                    const rawBase64 = data.texture.split(',')[1];
-                    opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", scene);
-                } else {
-                    opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
-                }
-            } catch (textureError) {
-                console.error("FALHA AO PROCESSAR A TEXTURA DO OPONENTE!", textureError);
+            
+            if (data.texture) {
+                const rawBase64 = data.texture.split(',')[1];
+                opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", scene);
+            } else {
                 opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
             }
-            
             opponent.material = opponentMaterial;
         }
-        // ================== A CORREÇÃO ESTÁ AQUI ==================
         else if (data.type === 'update' && opponent) {
-            // Lemos os dados do objeto simples
+            // **CORREÇÃO APLICADA AQUI (RECEBIMENTO)**
             const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
             const targetRot = new BABYLON.Quaternion(data.rot.x, data.rot.y, data.rot.z, data.rot.w);
             opponent.position = BABYLON.Vector3.Lerp(opponent.position, targetPos, 0.2);
             opponent.rotationQuaternion = BABYLON.Quaternion.Slerp(opponent.rotationQuaternion, targetRot, 0.2);
         }
         else if (data.type === 'ball_update' && ball && !isHost) {
-            // Lemos os dados do objeto simples
+            // **CORREÇÃO APLICADA AQUI (RECEBIMENTO)**
             const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
             const targetVel = new BABYLON.Vector3(data.vel.x, data.vel.y, data.vel.z);
             ball.position = BABYLON.Vector3.Lerp(ball.position, targetPos, 0.5);
@@ -314,11 +293,17 @@ function setupConnectionEvents() {
             render();
         }
     });
-
-    currentConnection.on('error', (err) => {
-        console.error("ERRO NA CONEXÃO P2P:", err);
-    });
 }
+
+const keys = { w: false, a: false, s: false, d: false, ' ': false };
+window.addEventListener('keydown', (event) => {
+    const key = event.key.toLowerCase();
+    if (keys.hasOwnProperty(key)) keys[key] = true;
+});
+window.addEventListener('keyup', (event) => {
+    const key = event.key.toLowerCase();
+    if (keys.hasOwnProperty(key)) keys[key] = false;
+});
 
 function render() {
     canvas.classList.add('hidden');
@@ -369,15 +354,6 @@ function setupJoystick() {
     });
 }
 
-// =======================================================
-// SUBSTITUA APENAS ESTA FUNÇÃO
-// =======================================================
-// =======================================================
-// SUBSTITUA APENAS ESTA FUNÇÃO (VERSÃO COM RENDER LOOP BLINDADO)
-// =======================================================
-// =======================================================
-// 1. SUBSTITUA ESTA FUNÇÃO (CORREÇÃO NO ENVIO DE DADOS)
-// =======================================================
 async function launchGame(gameId) {
     gameState.score = { blue: 0, red: 0 };
     opponent = null;
@@ -403,9 +379,11 @@ async function launchGame(gameId) {
                 if (scoringTeam === 'red') gameState.score.red++;
                 if (scoringTeam === 'blue') gameState.score.blue++;
                 render();
+                
                 ball.position = new BABYLON.Vector3(0, 5, 0);
                 ball.physicsImpostor.setLinearVelocity(BABYLON.Vector3.Zero());
                 ball.physicsImpostor.setAngularVelocity(BABYLON.Vector3.Zero());
+
                 if (isHost && currentConnection) {
                     currentConnection.send({ type: 'score_update', score: gameState.score });
                 }
@@ -420,98 +398,83 @@ async function launchGame(gameId) {
         player = gameData.player;
         player.moveDirection = new BABYLON.Vector3(0, 0, 0);
         
-        render();
-        window.addEventListener("resize", () => { if (engine) engine.resize(); });
+        render(); // Renderiza a UI do jogo ANTES de qualquer outra coisa
         setupJoystick();
         
-        if (currentConnection && currentConnection.open) {
+        if (currentConnection) {
             const myTexture = localStorage.getItem("playerAvatarTexture");
             currentConnection.send({ type: 'ready', texture: myTexture });
         }
         
         let lastSentTime = 0;
         engine.runRenderLoop(() => {
-            try {
-                if (!currentScene || !player || !player.physicsImpostor || !currentScene.activeCamera || !currentScene.isReady()) {
-                    return;
-                }
+            if (!player || !player.physicsImpostor || !currentScene || !currentScene.activeCamera) return;
 
-                const scene = currentScene;
-                const camera = scene.activeCamera;
-                const playerSpeed = 7.5;
-                const jumpForce = 6;
-                const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
-                const hit = scene.pickWithRay(ray, (mesh) => mesh.name !== "player" && mesh.name !== "opponent");
-                const isOnGround = hit.hit;
-
-                if (keys[' '] && isOnGround) {
-                    player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, jumpForce, 0), player.getAbsolutePosition());
-                    keys[' '] = false;
-                }
-
-                let totalMoveX = moveX;
-                let totalMoveZ = moveZ;
-                if (keys.w) totalMoveZ += 1;
-                if (keys.s) totalMoveZ -= 1;
-                if (keys.a) totalMoveX -= 1;
-                if (keys.d) totalMoveX += 1;
-
-                const cameraForward = camera.getDirection(BABYLON.Vector3.Forward());
-                const cameraRight = camera.getDirection(BABYLON.Vector3.Right());
-                cameraForward.y = 0;
-                cameraRight.y = 0;
-                cameraForward.normalize();
-                cameraRight.normalize();
-                const moveDirection = cameraRight.scale(totalMoveX).add(cameraForward.scale(totalMoveZ));
-                const currentVelocity = player.physicsImpostor.getLinearVelocity();
-
-                if (moveDirection.lengthSquared() > 0) {
-                    moveDirection.normalize();
-                    player.moveDirection.copyFrom(moveDirection);
-                    const newVelocity = moveDirection.scale(playerSpeed);
-                    player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVelocity.x, currentVelocity.y, newVelocity.z));
-                } else {
-                    player.moveDirection.set(0, 0, 0);
-                    player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
-                }
-
-                // ================== A CORREÇÃO ESTÁ AQUI ==================
-                if (currentConnection && currentConnection.open && (Date.now() - lastSentTime > 100)) {
-                    // Criamos objetos simples com as coordenadas
-                    const simplePos = { x: player.position.x, y: player.position.y, z: player.position.z };
-                    const simpleRot = { x: player.rotationQuaternion.x, y: player.rotationQuaternion.y, z: player.rotationQuaternion.z, w: player.rotationQuaternion.w };
-
-                    currentConnection.send({ type: 'update', pos: simplePos, rot: simpleRot });
-
-                    if (isHost && ball && ball.physicsImpostor) {
-                        const ballVel = ball.physicsImpostor.getLinearVelocity();
-                        const simpleBallPos = { x: ball.position.x, y: ball.position.y, z: ball.position.z };
-                        const simpleBallVel = { x: ballVel.x, y: ballVel.y, z: ballVel.z };
-
-                        currentConnection.send({
-                            type: 'ball_update',
-                            pos: simpleBallPos,
-                            vel: simpleBallVel
-                        });
-                    }
-                    lastSentTime = Date.now();
-                }
-                
-                scene.render();
-            
-            } catch (loopError) {
-                console.error("ERRO FATAL CAPTURADO DENTRO DO RENDER LOOP:", loopError.message);
-                engine.stopRenderLoop();
+            const camera = currentScene.activeCamera;
+            const playerSpeed = 7.5;
+            const jumpForce = 6;
+            const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
+            const hit = currentScene.pickWithRay(ray, (mesh) => mesh.name !== "player" && mesh.name !== "opponent");
+            const isOnGround = hit.hit;
+            if (keys[' '] && isOnGround) {
+                player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, jumpForce, 0), player.getAbsolutePosition());
+                keys[' '] = false;
             }
+            let totalMoveX = moveX;
+            let totalMoveZ = moveZ;
+            if (keys.w) totalMoveZ += 1;
+            if (keys.s) totalMoveZ -= 1;
+            if (keys.a) totalMoveX -= 1;
+            if (keys.d) totalMoveX += 1;
+            const cameraForward = camera.getDirection(BABYLON.Vector3.Forward());
+            const cameraRight = camera.getDirection(BABYLON.Vector3.Right());
+            cameraForward.y = 0;
+            cameraRight.y = 0;
+            cameraForward.normalize();
+            cameraRight.normalize();
+            const moveDirection = cameraRight.scale(totalMoveX).add(cameraForward.scale(totalMoveZ));
+            const currentVelocity = player.physicsImpostor.getLinearVelocity();
+            if (moveDirection.lengthSquared() > 0) {
+                moveDirection.normalize();
+                player.moveDirection.copyFrom(moveDirection);
+                const newVelocity = moveDirection.scale(playerSpeed);
+                player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVelocity.x, currentVelocity.y, newVelocity.z));
+            } else {
+                player.moveDirection.set(0, 0, 0); 
+                player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
+            }
+            
+            if (currentConnection && currentConnection.open && (Date.now() - lastSentTime > 100)) {
+                // **CORREÇÃO APLICADA AQUI (ENVIO)**
+                const simplePos = { x: player.position.x, y: player.position.y, z: player.position.z };
+                const simpleRot = { x: player.rotationQuaternion.x, y: player.rotationQuaternion.y, z: player.rotationQuaternion.z, w: player.rotationQuaternion.w };
+                currentConnection.send({ type: 'update', pos: simplePos, rot: simpleRot });
+
+                if (isHost && ball && ball.physicsImpostor) {
+                    const ballVel = ball.physicsImpostor.getLinearVelocity();
+                    const simpleBallPos = { x: ball.position.x, y: ball.position.y, z: ball.position.z };
+                    const simpleBallVel = { x: ballVel.x, y: ballVel.y, z: ballVel.z };
+                    currentConnection.send({ 
+                        type: 'ball_update', 
+                        pos: simpleBallPos, 
+                        vel: simpleBallVel
+                    });
+                }
+                lastSentTime = Date.now();
+            }
+            
+            if (currentScene && currentScene.isReady()) currentScene.render();
         });
 
-    } catch (initError) {
-        console.error("ERRO FATAL DURANTE A INICIALIZAÇÃO (launchGame)", initError);
+        window.addEventListener("resize", () => { if(engine) engine.resize(); });
+
+    } catch (error) {
+        console.error("FALHA CRÍTICA AO INICIAR O JOGO:", error);
         gameState.currentScreen = 'menu';
         render();
     }
 }
-}
+
 async function launchAvatarEditor() {
     gameState.currentScreen = 'loading';
     render();
@@ -554,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('connect-btn').onclick = () => {
         const opponentId = document.getElementById('other-id').value;
         if (opponentId) {
-            console.log(`Tentando conectar ao ID: ${opponentId}`);
+            console.log("Tentando conectar a:", opponentId);
             currentConnection = peer.connect(opponentId);
             isHost = false; 
             setupConnectionEvents();
@@ -571,15 +534,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (currentConnection && currentConnection.open) {
                 if (isHost) {
-                    console.log(`HOST iniciando o jogo ${gameId} para ambos os jogadores.`);
                     currentConnection.send({ type: 'start_game', gameId: gameId });
                     launchGame(gameId);
                 } else {
                     alert("Apenas o Host (o jogador que recebeu a conexão) pode iniciar o jogo.");
-                    console.warn("CLIENTE tentou iniciar o jogo. Ação bloqueada.");
                 }
             } else {
-                launchGame(gameId); // Modo single player
+                launchGame(gameId);
             }
             return;
         }
@@ -634,64 +595,4 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (saveBtn) {
                 const base64Canvas = gameState.editor.texture.getContext().canvas.toDataURL();
-                localStorage.setItem("playerAvatarTexture", base64Canvas);
-                alert("Avatar salvo!");
-            }
-            if (controlBtn && gameState.editor.scene) {
-                const camera = gameState.editor.scene.activeCamera;
-                const control = controlBtn.dataset.control;
-                if(control === 'rot-left') camera.alpha -= 0.3;
-                if(control === 'rot-right') camera.alpha += 0.3;
-                if(control === 'view-top') camera.beta = 0.1;
-                if(control === 'view-bottom') camera.beta = Math.PI - 0.1;
-            }
-        }
-    });
-
-    canvas.addEventListener('pointerdown', (evt) => {
-        if (gameState.currentScreen !== 'avatar_editor' || gameState.editor.tool === 'move') return;
-        gameState.editor.isPainting = true;
-        paint(evt);
-    });
-    canvas.addEventListener('pointermove', (evt) => {
-        if (gameState.currentScreen !== 'avatar_editor' || !gameState.editor.isPainting || gameState.editor.tool === 'move') return;
-        paint(evt);
-    });
-    canvas.addEventListener('pointerup', () => {
-        gameState.editor.isPainting = false;
-    });
-    canvas.addEventListener('pointerout', () => {
-        gameState.editor.isPainting = false;
-    });
-
-    function paint(evt) {
-        const { scene, tool, color, texture } = gameState.editor;
-        if (!scene) return;
-
-        const pickInfo = scene.pick(scene.pointerX, scene.pointerY);
-        if (pickInfo.hit) {
-            const textureContext = texture.getContext();
-            
-            if (tool === 'bucket') {
-                textureContext.fillStyle = color;
-                textureContext.fillRect(0, 0, 512, 512);
-            } 
-            else if (tool === 'pen' || tool === 'eraser') {
-                const uv = pickInfo.getTextureCoordinates();
-                if(!uv) return;
-
-                const posX = uv.x * 512;
-                const posY = (1 - uv.y) * 512;
-                
-                textureContext.beginPath();
-                textureContext.fillStyle = (tool === 'eraser') ? '#cccccc' : color;
-                const brushSize = (tool === 'eraser') ? 20 : 10;
-                textureContext.arc(posX, posY, brushSize, 0, 2 * Math.PI);
-                textureContext.fill();
-            }
-            texture.update();
-        }
-    }
-
-    render();
-});
+                localStorage.setItem("playerAvatarTexture",.
