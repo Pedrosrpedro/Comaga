@@ -1,7 +1,6 @@
 // soccerGame.js
 
 async function startSoccerGame(engine, canvas, onGoalScored) {
-    await window.Ammo(); // Espera a física carregar
     
     const scene = new BABYLON.Scene(engine);
     scene.enablePhysics(new BABYLON.Vector3(0, -9.81, 0), new BABYLON.AmmoJSPlugin());
