@@ -191,6 +191,7 @@ function createAvatarEditorUIHTML() {
 const appContainer = document.getElementById('app');
 const canvas = document.getElementById('renderCanvas');
 const joystickZone = document.getElementById('joystickZone');
+const jumpButton = document.getElementById('jumpButton');
 let engine;
 let currentScene = null;
 let player;
@@ -205,8 +206,14 @@ let myAuthId = null;
 let gameSessionRef;
 let playersRef;
 
+// VARIÁVEIS DE CONTROLE
 let moveX = 0;
 let moveZ = 0;
+let isJumping = false;
+
+// VARIÁVEIS DE ESTADO DE CONEXÃO
+let isAttemptingToJoin = false;
+let joiningGameId = null;
 
 
 // =======================================================
@@ -247,11 +254,16 @@ function listenForGameSessionChanges() {
     sessionRef.on('value', (snapshot) => {
         const gameData = snapshot.val();
         
-        // Se uma sessão de jogo existe e eu não sou o host, eu entro nela
-        if (gameData && gameData.gameId && !isHost) {
-            console.log("Sessão de jogo encontrada! Entrando como cliente no jogo:", gameData.gameId);
+        // CORREÇÃO CRÍTICA: Só entra na sala se o jogador ESTIVER TENTANDO se conectar.
+        if (isAttemptingToJoin && !isHost && gameData && gameData.gameId === joiningGameId) {
+            console.log("Sessão de jogo compatível encontrada! Entrando como cliente:", gameData.gameId);
+            
+            // Reseta as flags para não entrar em outra sala acidentalmente
+            isAttemptingToJoin = false;
+            joiningGameId = null;
+
             gameSessionRef = sessionRef; // Define a referência da sessão atual
-            playersRef = gameSessionRef.child('players'); // Define a referência dos jogadores DENTRO da sessão
+            playersRef = gameSessionRef.child('players'); // Define a referência dos jogadores
             launchGame(gameData.gameId);
         }
         // Se a sessão foi removida (host saiu) e eu não sou o host, volto para o menu
@@ -344,6 +356,7 @@ window.addEventListener('keyup', (event) => {
 function render() {
     canvas.classList.add('hidden');
     joystickZone.classList.add('hidden');
+    jumpButton.classList.add('hidden'); // Esconde o botão de pulo por padrão
     appContainer.innerHTML = '';
 
     if (gameState.currentScreen === 'menu') {
@@ -352,6 +365,7 @@ function render() {
         canvas.classList.remove('hidden');
         if (engine) engine.resize();
         joystickZone.classList.remove('hidden');
+        jumpButton.classList.remove('hidden'); // Mostra o botão de pulo no jogo
         appContainer.innerHTML = createHudHTML();
     } else if (gameState.currentScreen === 'loading') {
         appContainer.innerHTML = `<div class="roblox-container"><h1>Carregando...</h1></div>`;
@@ -374,15 +388,17 @@ function setupJoystick() {
     const options = {
         zone: joystickZone,
         mode: 'static',
+        position: { left: '50%', top: '50%' },
         color: 'white',
         size: 150
     };
     const manager = nipplejs.create(options);
+    
+    // LÓGICA DO JOYSTICK CORRIGIDA
     manager.on('move', (event, data) => {
-        const angle = data.angle.radian;
-        const force = Math.min(data.force, 2);
-        moveX = Math.cos(angle) * force;
-        moveZ = Math.sin(angle) * force;
+        const speedFactor = 1.5; // Ajuste a velocidade do movimento se necessário
+        moveX = data.vector.x * speedFactor;
+        moveZ = -data.vector.y * speedFactor; // NippleJS tem o eixo Y invertido
     });
     manager.on('end', () => {
         moveX = 0;
@@ -460,9 +476,11 @@ async function launchGame(gameId) {
             const hit = currentScene.pickWithRay(ray, (mesh) => mesh.name !== "player" && !mesh.name.startsWith("opponent"));
             const isOnGround = hit.hit;
 
-            if (keys[' '] && isOnGround) {
+            // LÓGICA DE PULO ATUALIZADA (INCLUI BOTÃO MOBILE)
+            if ((keys[' '] || isJumping) && isOnGround) {
                 player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, jumpForce, 0), player.getAbsolutePosition());
                 keys[' '] = false;
+                isJumping = false; // Reseta o pulo do botão para não pular continuamente
             }
 
             let totalMoveX = moveX;
@@ -589,6 +607,8 @@ function backToMenu() {
     gameSessionRef = null;
     playersRef = null;
     opponents = {};
+    isAttemptingToJoin = false;
+    joiningGameId = null;
 
     gameState.currentScreen = 'menu';
     render();
@@ -692,16 +712,17 @@ document.addEventListener('DOMContentLoaded', () => {
         isHost = true;
         
         gameSessionRef = database.ref('game_session');
-        playersRef = gameSessionRef.child('players'); // Define a referência dos jogadores DENTRO da sessão
+        // Limpa qualquer sessão antiga antes de criar uma nova
+        gameSessionRef.remove().then(() => {
+            playersRef = gameSessionRef.child('players'); 
+            gameSessionRef.onDisconnect().remove();
 
-        // SOLUÇÃO CHAVE: Se o host desconectar, a sessão inteira é removida!
-        gameSessionRef.onDisconnect().remove();
-
-        gameSessionRef.set({
-            gameId: selectedGameId,
-            hostId: myAuthId
-        }).then(() => {
-            launchGame(selectedGameId);
+            gameSessionRef.set({
+                gameId: selectedGameId,
+                hostId: myAuthId
+            }).then(() => {
+                launchGame(selectedGameId);
+            });
         });
         
         closeJoinModal();
@@ -713,8 +734,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         console.log(`Tentando entrar em uma sala para: ${selectedGameId}. Eu serei um cliente.`);
         isHost = false; 
+        
+        // ATIVA A FLAG PARA PROCURAR JOGO
+        isAttemptingToJoin = true;
+        joiningGameId = selectedGameId;
 
-        alert("Procurando uma sala... Você entrará automaticamente quando o anfitrião iniciar o jogo.");
+        alert("Procurando uma sala... Você entrará automaticamente se uma for encontrada.");
         closeJoinModal();
     });
 
@@ -723,6 +748,12 @@ document.addEventListener('DOMContentLoaded', () => {
         closeJoinModal();
     });
     
+    // LISTENER PARA O BOTÃO DE PULO
+    jumpButton.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        isJumping = true;
+    });
+
     canvas.addEventListener('pointerdown', (evt) => {
         if (gameState.currentScreen !== 'avatar_editor' || gameState.editor.tool === 'move') return;
         gameState.editor.isPainting = true;
