@@ -8,7 +8,7 @@ let lava;
 // FUNÇÃO PRINCIPAL DO JOGO
 // =======================================================
 async function startDisasterGame(engine, canvas, onHudUpdate, sounds) {
-    await window.Ammo();
+    
     
     const scene = new BABYLON.Scene(engine);
     
