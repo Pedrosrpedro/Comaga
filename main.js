@@ -205,15 +205,12 @@ let database;
 let myAuthId = null; 
 let gameSessionRef;
 let playersRef;
+let sessionListener; // Guarda a referência do listener para poder removê-lo
 
 // VARIÁVEIS DE CONTROLE
 let moveX = 0;
 let moveZ = 0;
 let isJumping = false;
-
-// VARIÁVEIS DE ESTADO DE CONEXÃO
-let isAttemptingToJoin = false;
-let joiningGameId = null;
 
 
 // =======================================================
@@ -240,7 +237,6 @@ function initializeFirebase() {
         if (user) {
           myAuthId = user.uid;
           console.log("Autenticado com sucesso! Meu ID é:", myAuthId);
-          listenForGameSessionChanges();
         }
       })
       .catch((error) => {
@@ -248,32 +244,18 @@ function initializeFirebase() {
       });
 }
 
-function listenForGameSessionChanges() {
+function listenForHostExit() {
     const sessionRef = database.ref('game_session');
-    
-    sessionRef.on('value', (snapshot) => {
-        const gameData = snapshot.val();
-        
-        // CORREÇÃO CRÍTICA: Só entra na sala se o jogador ESTIVER TENTANDO se conectar.
-        if (isAttemptingToJoin && !isHost && gameData && gameData.gameId === joiningGameId) {
-            console.log("Sessão de jogo compatível encontrada! Entrando como cliente:", gameData.gameId);
-            
-            // Reseta as flags para não entrar em outra sala acidentalmente
-            isAttemptingToJoin = false;
-            joiningGameId = null;
-
-            gameSessionRef = sessionRef; // Define a referência da sessão atual
-            playersRef = gameSessionRef.child('players'); // Define a referência dos jogadores
-            launchGame(gameData.gameId);
-        }
-        // Se a sessão foi removida (host saiu) e eu não sou o host, volto para o menu
-        else if (!gameData && gameState.currentScreen !== 'menu' && !isHost) {
+    // Este listener só serve para desconectar clientes se a sessão for removida
+    sessionListener = sessionRef.on('value', (snapshot) => {
+        if (!snapshot.exists() && !isHost && gameState.currentScreen !== 'menu') {
             console.log("O host encerrou a sessão. Voltando para o menu.");
             alert("O anfitrião da sala saiu.");
             backToMenu();
         }
     });
 }
+
 
 function setupMultiplayerListeners() {
     if (!playersRef) {
@@ -394,11 +376,10 @@ function setupJoystick() {
     };
     const manager = nipplejs.create(options);
     
-    // LÓGICA DO JOYSTICK CORRIGIDA
     manager.on('move', (event, data) => {
-        const speedFactor = 1.5; // Ajuste a velocidade do movimento se necessário
+        const speedFactor = 1.5; 
         moveX = data.vector.x * speedFactor;
-        moveZ = -data.vector.y * speedFactor; // NippleJS tem o eixo Y invertido
+        moveZ = -data.vector.y * speedFactor; 
     });
     manager.on('end', () => {
         moveX = 0;
@@ -412,7 +393,6 @@ async function launchGame(gameId) {
     }
     opponents = {};
     
-    // Desliga listeners antigos para evitar duplicação
     if (playersRef) playersRef.off();
     if (gameSessionRef) gameSessionRef.child('ball').off();
     
@@ -436,7 +416,7 @@ async function launchGame(gameId) {
         if (gameId === 'soccer_game') {
             gameState.currentScreen = 'playing_soccer';
             gameData = await startSoccerGame(engine, canvas, (scoringTeam) => {
-                if (!isHost) return; // Apenas o host computa os gols
+                if (!isHost) return;
                 if (scoringTeam === 'red') gameState.score.red++;
                 if (scoringTeam === 'blue') gameState.score.blue++;
                 render();
@@ -457,12 +437,12 @@ async function launchGame(gameId) {
         
         render();
         setupJoystick();
-        setupMultiplayerListeners(); // Inicia os listeners para a sessão de jogo atual
         
-        // Define a nossa presença no jogo
-        if (playersRef && myAuthId) {
+        // Só ativa os listeners de multiplayer se a referência existir
+        if(playersRef) {
+            setupMultiplayerListeners();
             const myPlayerRef = playersRef.child(myAuthId);
-            myPlayerRef.onDisconnect().remove(); // Remove apenas a si mesmo se desconectar
+            myPlayerRef.onDisconnect().remove();
         }
         
         let lastSentTime = 0;
@@ -476,11 +456,10 @@ async function launchGame(gameId) {
             const hit = currentScene.pickWithRay(ray, (mesh) => mesh.name !== "player" && !mesh.name.startsWith("opponent"));
             const isOnGround = hit.hit;
 
-            // LÓGICA DE PULO ATUALIZADA (INCLUI BOTÃO MOBILE)
             if ((keys[' '] || isJumping) && isOnGround) {
                 player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, jumpForce, 0), player.getAbsolutePosition());
                 keys[' '] = false;
-                isJumping = false; // Reseta o pulo do botão para não pular continuamente
+                isJumping = false;
             }
 
             let totalMoveX = moveX;
@@ -509,7 +488,6 @@ async function launchGame(gameId) {
                 player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
             }
             
-            // LÓGICA DE ENVIO DE DADOS PARA O FIREBASE
             if (myAuthId && playersRef && (Date.now() - lastSentTime > 100)) {
                 const myPlayerRef = playersRef.child(myAuthId);
                 const myTexture = localStorage.getItem("playerAvatarTexture");
@@ -540,8 +518,7 @@ async function launchGame(gameId) {
 
     } catch (error) {
         console.error("FALHA CRÍTICA AO INICIAR O JOGO:", error);
-        gameState.currentScreen = 'menu';
-        render();
+        backToMenu();
     }
 }
 
@@ -573,12 +550,10 @@ async function launchAvatarEditor() {
 
     } catch(e) {
         console.error("Falha ao iniciar o editor de avatar", e);
-        gameState.currentScreen = 'menu';
-        render();
+        backToMenu();
     }
 }
 
-// NOVA FUNÇÃO para limpar tudo e voltar ao menu
 function backToMenu() {
     if (engine) {
         engine.stopRenderLoop();
@@ -586,29 +561,27 @@ function backToMenu() {
         currentScene = null;
     }
     
-    // Limpa a sessão de jogo dependendo se é host ou cliente
     if (isHost && gameSessionRef) {
-        console.log("Removendo sessão de jogo como host...");
-        gameSessionRef.remove(); // Remove a sessão inteira
+        gameSessionRef.remove();
     } else if (!isHost && playersRef && myAuthId) {
-        console.log("Saindo da sessão de jogo como cliente...");
-        playersRef.child(myAuthId).remove(); // Remove apenas a si mesmo
+        playersRef.child(myAuthId).remove();
     }
 
-    // Desliga todos os listeners para evitar vazamento de memória e bugs
     if (playersRef) playersRef.off();
     if (gameSessionRef) {
-         gameSessionRef.off();
-         gameSessionRef.child('ball').off();
+        gameSessionRef.off();
+        gameSessionRef.child('ball').off();
+    }
+    // Remove o listener de sessão para não ser chamado desnecessariamente
+    if (sessionListener) {
+        database.ref('game_session').off('value', sessionListener);
+        sessionListener = null;
     }
     
-    // Reseta as variáveis de estado do multiplayer
     isHost = false;
     gameSessionRef = null;
     playersRef = null;
     opponents = {};
-    isAttemptingToJoin = false;
-    joiningGameId = null;
 
     gameState.currentScreen = 'menu';
     render();
@@ -628,14 +601,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedGameId = null;
 
     function openJoinModal(gameId, gameName) {
-        selectedGameId = gameId;
+        selectedGameId = gameId; // Atualiza a variável global
         modalGameTitle.textContent = gameName;
         joinGameModal.classList.remove('hidden');
     }
 
     function closeJoinModal() {
         joinGameModal.classList.add('hidden');
-        selectedGameId = null;
+        selectedGameId = null; // Limpa a variável para evitar usar a ID errada depois
     }
 
     appContainer.addEventListener('click', (event) => {
@@ -657,7 +630,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (navAction === "avatar") {
                 launchAvatarEditor();
             } else if (navAction === "home") {
-                backToMenu(); // Usa a nova função centralizada
+                backToMenu();
             }
             return;
         }
@@ -712,16 +685,19 @@ document.addEventListener('DOMContentLoaded', () => {
         isHost = true;
         
         gameSessionRef = database.ref('game_session');
-        // Limpa qualquer sessão antiga antes de criar uma nova
+        
+        // Limpa qualquer sessão antiga e então cria a nova
         gameSessionRef.remove().then(() => {
             playersRef = gameSessionRef.child('players'); 
-            gameSessionRef.onDisconnect().remove();
+            gameSessionRef.onDisconnect().remove(); // Garante que a sala será deletada se o host fechar a página
 
+            // Cria a nova sessão com os dados corretos
             gameSessionRef.set({
-                gameId: selectedGameId,
+                gameId: selectedGameId, // USA A VARIÁVEL GLOBAL CORRETA
                 hostId: myAuthId
             }).then(() => {
-                launchGame(selectedGameId);
+                listenForHostExit();
+                launchGame(selectedGameId); // Inicia o jogo para o host
             });
         });
         
@@ -732,14 +708,26 @@ document.addEventListener('DOMContentLoaded', () => {
         sounds.click.play();
         if (!selectedGameId) return;
 
-        console.log(`Tentando entrar em uma sala para: ${selectedGameId}. Eu serei um cliente.`);
+        console.log(`Tentando entrar em uma sala para: ${selectedGameId}.`);
         isHost = false; 
         
-        // ATIVA A FLAG PARA PROCURAR JOGO
-        isAttemptingToJoin = true;
-        joiningGameId = selectedGameId;
+        const sessionRef = database.ref('game_session');
+        // Usa .once() para fazer uma verificação única e imediata da sala
+        sessionRef.once('value', (snapshot) => {
+            if (snapshot.exists() && snapshot.val().gameId === selectedGameId) {
+                // Sala compatível encontrada!
+                console.log("Sala encontrada! Entrando...");
+                gameSessionRef = sessionRef;
+                playersRef = gameSessionRef.child('players');
+                listenForHostExit(); // Começa a escutar para caso o host saia
+                launchGame(selectedGameId); // Inicia o jogo para o cliente
+            } else {
+                // Nenhuma sala encontrada ou o jogo é diferente
+                console.log("Nenhuma sala compatível encontrada.");
+                alert("Nenhuma sala para este jogo foi encontrada. Tente novamente ou crie sua própria sala.");
+            }
+        });
 
-        alert("Procurando uma sala... Você entrará automaticamente se uma for encontrada.");
         closeJoinModal();
     });
 
@@ -748,7 +736,6 @@ document.addEventListener('DOMContentLoaded', () => {
         closeJoinModal();
     });
     
-    // LISTENER PARA O BOTÃO DE PULO
     jumpButton.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         isJumping = true;
