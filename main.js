@@ -210,10 +210,9 @@ let moveZ = 0;
 
 
 // =======================================================
-// NOVA LÓGICA DE MULTIPLAYER COM FIREBASE
+// LÓGICA DE MULTIPLAYER COM FIREBASE (ESTRUTURA CORRIGIDA)
 // =======================================================
 function initializeFirebase() {
-    // <-- COLE A SUA CONFIGURAÇÃO DO FIREBASE AQUI DENTRO!
     const firebaseConfig = {
       apiKey: "AIzaSyAchW-Gr80W-I8ROKKMuZzTEG0gOku4G9k",
       authDomain: "teste-multiplayer-e0ccd.firebaseapp.com",
@@ -225,25 +224,15 @@ function initializeFirebase() {
       measurementId: "G-PQEBPWSBQE"
     };
 
-    // Inicializa o Firebase
     firebaseApp = firebase.initializeApp(firebaseConfig);
     database = firebase.database();
 
-    // Autentica o jogador anonimamente
     firebase.auth().signInAnonymously()
       .then(() => {
         const user = firebase.auth().currentUser;
         if (user) {
           myAuthId = user.uid;
           console.log("Autenticado com sucesso! Meu ID é:", myAuthId);
-          
-          playersRef = database.ref('players');
-          const myPlayerRef = playersRef.child(myAuthId);
-          
-          // Sistema de presença: Remove o jogador do banco de dados quando ele se desconectar
-          myPlayerRef.onDisconnect().remove();
-
-          // Começa a escutar por mudanças na sessão de jogo
           listenForGameSessionChanges();
         }
       })
@@ -253,21 +242,32 @@ function initializeFirebase() {
 }
 
 function listenForGameSessionChanges() {
-    gameSessionRef = database.ref('game_session');
+    const sessionRef = database.ref('game_session');
     
-    // Escuta por qualquer mudança na sessão de jogo (ex: um host iniciou um jogo)
-    gameSessionRef.on('value', (snapshot) => {
+    sessionRef.on('value', (snapshot) => {
         const gameData = snapshot.val();
-        // Se existe uma sessão de jogo e eu não sou o host, eu entro no jogo
+        
+        // Se uma sessão de jogo existe e eu não sou o host, eu entro nela
         if (gameData && gameData.gameId && !isHost) {
-            console.log("Recebemos ordem do host para iniciar o jogo:", gameData.gameId);
+            console.log("Sessão de jogo encontrada! Entrando como cliente no jogo:", gameData.gameId);
+            gameSessionRef = sessionRef; // Define a referência da sessão atual
+            playersRef = gameSessionRef.child('players'); // Define a referência dos jogadores DENTRO da sessão
             launchGame(gameData.gameId);
+        }
+        // Se a sessão foi removida (host saiu) e eu não sou o host, volto para o menu
+        else if (!gameData && gameState.currentScreen !== 'menu' && !isHost) {
+            console.log("O host encerrou a sessão. Voltando para o menu.");
+            alert("O anfitrião da sala saiu.");
+            backToMenu();
         }
     });
 }
 
 function setupMultiplayerListeners() {
-    if (!playersRef) return;
+    if (!playersRef) {
+        console.error("A referência para 'players' não foi definida. Não é possível iniciar os listeners.");
+        return;
+    }
     
     // NOVO JOGADOR ENTROU
     playersRef.on('child_added', (snapshot) => {
@@ -296,15 +296,13 @@ function setupMultiplayerListeners() {
         const data = snapshot.val();
         const id = snapshot.key;
 
-        if (!currentScene || id === myAuthId) return;
+        if (!currentScene || id === myAuthId || !opponents[id]) return;
 
         const opponentMesh = opponents[id];
-        if (opponentMesh) {
-            const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
-            const targetRot = new BABYLON.Quaternion(data.rot.x, data.rot.y, data.rot.z, data.rot.w);
-            opponentMesh.position = BABYLON.Vector3.Lerp(opponentMesh.position, targetPos, 0.2);
-            opponentMesh.rotationQuaternion = BABYLON.Quaternion.Slerp(opponentMesh.rotationQuaternion, targetRot, 0.2);
-        }
+        const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
+        const targetRot = new BABYLON.Quaternion(data.rot.x, data.rot.y, data.rot.z, data.rot.w);
+        opponentMesh.position = BABYLON.Vector3.Lerp(opponentMesh.position, targetPos, 0.2);
+        opponentMesh.rotationQuaternion = BABYLON.Quaternion.Slerp(opponentMesh.rotationQuaternion, targetRot, 0.2);
     });
 
     // JOGADOR DESCONECTOU
@@ -318,8 +316,8 @@ function setupMultiplayerListeners() {
     });
     
     // ESCUTA PELA BOLA (SE NÃO FOR O HOST)
-    if (!isHost) {
-        const ballRef = database.ref('game_session/ball');
+    if (!isHost && gameSessionRef) {
+        const ballRef = gameSessionRef.child('ball');
         ballRef.on('value', (snapshot) => {
             const data = snapshot.val();
             if (ball && ball.physicsImpostor && data && data.pos && data.vel) {
@@ -398,8 +396,9 @@ async function launchGame(gameId) {
     }
     opponents = {};
     
+    // Desliga listeners antigos para evitar duplicação
     if (playersRef) playersRef.off();
-    if (gameSessionRef) gameSessionRef.off();
+    if (gameSessionRef) gameSessionRef.child('ball').off();
     
     gameState.score = { blue: 0, red: 0 };
     ball = null;
@@ -421,6 +420,7 @@ async function launchGame(gameId) {
         if (gameId === 'soccer_game') {
             gameState.currentScreen = 'playing_soccer';
             gameData = await startSoccerGame(engine, canvas, (scoringTeam) => {
+                if (!isHost) return; // Apenas o host computa os gols
                 if (scoringTeam === 'red') gameState.score.red++;
                 if (scoringTeam === 'blue') gameState.score.blue++;
                 render();
@@ -441,7 +441,13 @@ async function launchGame(gameId) {
         
         render();
         setupJoystick();
-        setupMultiplayerListeners();
+        setupMultiplayerListeners(); // Inicia os listeners para a sessão de jogo atual
+        
+        // Define a nossa presença no jogo
+        if (playersRef && myAuthId) {
+            const myPlayerRef = playersRef.child(myAuthId);
+            myPlayerRef.onDisconnect().remove(); // Remove apenas a si mesmo se desconectar
+        }
         
         let lastSentTime = 0;
         engine.runRenderLoop(() => {
@@ -486,7 +492,7 @@ async function launchGame(gameId) {
             }
             
             // LÓGICA DE ENVIO DE DADOS PARA O FIREBASE
-            if (myAuthId && (Date.now() - lastSentTime > 100)) {
+            if (myAuthId && playersRef && (Date.now() - lastSentTime > 100)) {
                 const myPlayerRef = playersRef.child(myAuthId);
                 const myTexture = localStorage.getItem("playerAvatarTexture");
                 
@@ -498,13 +504,13 @@ async function launchGame(gameId) {
                 
                 myPlayerRef.set(playerData);
 
-                if (isHost && ball && ball.physicsImpostor) {
+                if (isHost && ball && ball.physicsImpostor && gameSessionRef) {
                     const ballVel = ball.physicsImpostor.getLinearVelocity();
                     const ballData = {
                         pos: { x: ball.position.x, y: ball.position.y, z: ball.position.z },
                         vel: { x: ballVel.x, y: ballVel.y, z: ballVel.z }
                     };
-                    database.ref('game_session/ball').set(ballData);
+                    gameSessionRef.child('ball').set(ballData);
                 }
                 lastSentTime = Date.now();
             }
@@ -554,47 +560,75 @@ async function launchAvatarEditor() {
     }
 }
 
+// NOVA FUNÇÃO para limpar tudo e voltar ao menu
+function backToMenu() {
+    if (engine) {
+        engine.stopRenderLoop();
+        if (currentScene) currentScene.dispose();
+        currentScene = null;
+    }
+    
+    // Limpa a sessão de jogo dependendo se é host ou cliente
+    if (isHost && gameSessionRef) {
+        console.log("Removendo sessão de jogo como host...");
+        gameSessionRef.remove(); // Remove a sessão inteira
+    } else if (!isHost && playersRef && myAuthId) {
+        console.log("Saindo da sessão de jogo como cliente...");
+        playersRef.child(myAuthId).remove(); // Remove apenas a si mesmo
+    }
+
+    // Desliga todos os listeners para evitar vazamento de memória e bugs
+    if (playersRef) playersRef.off();
+    if (gameSessionRef) {
+         gameSessionRef.off();
+         gameSessionRef.child('ball').off();
+    }
+    
+    // Reseta as variáveis de estado do multiplayer
+    isHost = false;
+    gameSessionRef = null;
+    playersRef = null;
+    opponents = {};
+
+    gameState.currentScreen = 'menu';
+    render();
+}
+
 // =======================================================
 // SEÇÃO 6: INICIALIZAÇÃO E EVENT LISTENERS
 // =======================================================
 document.addEventListener('DOMContentLoaded', () => {
-    // INICIALIZA A CONEXÃO COM O FIREBASE
     initializeFirebase();
 
-    // --- NOVO: Referências para os elementos do Modal ---
     const joinGameModal = document.getElementById('join-game-modal');
     const modalGameTitle = document.getElementById('modal-game-title');
     const createRoomBtn = document.getElementById('create-room-btn');
     const joinRoomBtn = document.getElementById('join-room-btn');
     const closeModalBtn = document.getElementById('close-modal-btn');
-    let selectedGameId = null; // Variável para guardar o ID do jogo que foi clicado
+    let selectedGameId = null;
 
-    // --- NOVO: Funções para mostrar e esconder o modal ---
     function openJoinModal(gameId, gameName) {
-        selectedGameId = gameId; // Guarda o ID do jogo
-        modalGameTitle.textContent = gameName; // Atualiza o título do modal
-        joinGameModal.classList.remove('hidden'); // Mostra o modal
+        selectedGameId = gameId;
+        modalGameTitle.textContent = gameName;
+        joinGameModal.classList.remove('hidden');
     }
 
     function closeJoinModal() {
-        joinGameModal.classList.add('hidden'); // Esconde o modal
-        selectedGameId = null; // Limpa o ID do jogo selecionado
+        joinGameModal.classList.add('hidden');
+        selectedGameId = null;
     }
 
-    // Listener principal da aplicação
     appContainer.addEventListener('click', (event) => {
         const target = event.target;
         const gameCard = target.closest('.game-card');
         const navItem = target.closest('.nav-item');
 
-        // --- LÓGICA MODIFICADA ---
-        // Se um card de jogo for clicado, abra o modal em vez de iniciar o jogo
         if (gameCard) {
             sounds.click.play();
             const gameId = gameCard.dataset.gameId;
             const gameName = gameCard.querySelector('h3').textContent;
-            openJoinModal(gameId, gameName); // Chama a função para abrir o modal
-            return; // Para a execução para não continuar com o código antigo
+            openJoinModal(gameId, gameName);
+            return;
         }
         
         if (navItem) {
@@ -603,50 +637,73 @@ document.addEventListener('DOMContentLoaded', () => {
             if (navAction === "avatar") {
                 launchAvatarEditor();
             } else if (navAction === "home") {
-                 if (engine) {
-                    engine.stopRenderLoop();
-                    if (currentScene) currentScene.dispose();
-                    currentScene = null;
-                }
-                // LIMPA A SESSÃO DE JOGO AO VOLTAR PARA O MENU
-                 if(isHost && gameSessionRef) {
-                     gameSessionRef.remove();
-                 }
-                 if(playersRef && myAuthId) {
-                     playersRef.child(myAuthId).remove();
-                 }
-                 isHost = false;
-
-                 gameState.currentScreen = 'menu';
-                 render();
+                backToMenu(); // Usa a nova função centralizada
             }
             return;
         }
 
         if (gameState.currentScreen === 'avatar_editor') {
-            // Lógica do editor de avatar...
+            const toolBtn = target.closest('.tool-btn');
+            const colorBtn = target.closest('.color-btn');
+            const controlBtn = target.closest('.control-btn');
+            const backBtn = target.closest('#back-to-menu-btn');
+            const saveBtn = target.closest('#save-avatar-btn');
+
+            if (toolBtn) {
+                document.querySelector('.tool-btn.active').classList.remove('active');
+                toolBtn.classList.add('active');
+                const newTool = toolBtn.dataset.tool;
+                gameState.editor.tool = newTool;
+
+                const camera = gameState.editor.scene.activeCamera;
+                if (newTool === 'move') {
+                    camera.attachControl(canvas, true);
+                } else {
+                    camera.detachControl();
+                }
+            }
+            if (colorBtn) {
+                gameState.editor.color = colorBtn.dataset.color;
+            }
+            if (backBtn) {
+                 backToMenu();
+            }
+            if (saveBtn) {
+                const base64Canvas = gameState.editor.texture.getContext().canvas.toDataURL();
+                localStorage.setItem("playerAvatarTexture", base64Canvas);
+                alert("Avatar salvo!");
+            }
+            if (controlBtn && gameState.editor.scene) {
+                const camera = gameState.editor.scene.activeCamera;
+                const control = controlBtn.dataset.control;
+                if(control === 'rot-left') camera.alpha -= 0.3;
+                if(control === 'rot-right') camera.alpha += 0.3;
+                if(control === 'view-top') camera.beta = 0.1;
+                if(control === 'view-bottom') camera.beta = Math.PI - 0.1;
+            }
         }
     });
 
-    // --- NOVO: Listeners para os botões do Modal ---
     createRoomBtn.addEventListener('click', () => {
         sounds.click.play();
         if (!selectedGameId) return;
 
         console.log(`Criando sala para o jogo: ${selectedGameId}. Eu serei o Host!`);
-        isHost = true; // Define este jogador como o anfitrião (host)
-
-        // Avisa aos outros jogadores, escrevendo na sessão de jogo do Firebase
-        if (gameSessionRef) {
-            gameSessionRef.set({
-                gameId: selectedGameId,
-                hostId: myAuthId
-            });
-        }
+        isHost = true;
         
-        // Inicia o jogo para o host. A função `set` acima irá notificar
-        // os outros jogadores para que eles iniciem o jogo também.
-        launchGame(selectedGameId);
+        gameSessionRef = database.ref('game_session');
+        playersRef = gameSessionRef.child('players'); // Define a referência dos jogadores DENTRO da sessão
+
+        // SOLUÇÃO CHAVE: Se o host desconectar, a sessão inteira é removida!
+        gameSessionRef.onDisconnect().remove();
+
+        gameSessionRef.set({
+            gameId: selectedGameId,
+            hostId: myAuthId
+        }).then(() => {
+            launchGame(selectedGameId);
+        });
+        
         closeJoinModal();
     });
 
@@ -655,11 +712,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!selectedGameId) return;
 
         console.log(`Tentando entrar em uma sala para: ${selectedGameId}. Eu serei um cliente.`);
-        isHost = false; // Define este jogador como um cliente
+        isHost = false; 
 
-        // Apenas fecha o modal. O listener `listenForGameSessionChanges` que já existe
-        // irá automaticamente detectar quando um host criar a sala e iniciará o jogo.
-        alert("Procurando uma sala... Você entrará automaticamente quando o host iniciar o jogo.");
+        alert("Procurando uma sala... Você entrará automaticamente quando o anfitrião iniciar o jogo.");
         closeJoinModal();
     });
 
@@ -668,7 +723,6 @@ document.addEventListener('DOMContentLoaded', () => {
         closeJoinModal();
     });
     
-    // O resto do seu código de listeners (avatar, paint, etc.) continua aqui...
     canvas.addEventListener('pointerdown', (evt) => {
         if (gameState.currentScreen !== 'avatar_editor' || gameState.editor.tool === 'move') return;
         gameState.editor.isPainting = true;
