@@ -1,5 +1,5 @@
-// =======================================================
-// === CÓDIGO COMPLETO DO JOGO COM MULTIPLAYER SOCKET.IO ===
+// = a=====================================================
+// === CÓDIGO COMPLETO DO JOGO COM MULTIPLAYER FIREBASE ===
 // =======================================================
 
 // =======================================================
@@ -196,55 +196,109 @@ let currentScene = null;
 let player;
 let ball = null;
 
-// ALTERADO: Variáveis de Multiplayer para Socket.IO
+// VARIÁVEIS DE MULTIPLAYER FIREBASE
 let isHost = false; 
-let socket; 
-let opponents = {}; // Objeto para guardar os meshes de todos os oponentes
+let opponents = {}; 
+let firebaseApp;
+let database;
+let myAuthId = null; 
+let gameSessionRef;
+let playersRef;
 
 let moveX = 0;
 let moveZ = 0;
 
 
 // =======================================================
-// NOVO: LÓGICA DE MULTIPLAYER COM SOCKET.IO
+// NOVA LÓGICA DE MULTIPLAYER COM FIREBASE
 // =======================================================
-function initializeSocketIO() {
-    // <-- MUDANÇA MAIS IMPORTANTE: COLOQUE A URL DO SEU SERVIDOR REPLIT AQUI!
-    const serverUrl = "https://233e7f2b-8348-4a20-8e44-0ce2508b7062-00-1dv83e1ptur3y.riker.repl.co/"; // Exemplo! Troque pela sua URL!
-    
-    console.log("Tentando conectar ao servidor:", serverUrl);
-    socket = io(serverUrl);
+function initializeFirebase() {
+    // <-- COLE A SUA CONFIGURAÇÃO DO FIREBASE AQUI DENTRO!
+    const firebaseConfig = {
+      // Exemplo:
+      // apiKey: "AIzaSy...",
+      // authDomain: "seu-projeto.firebaseapp.com",
+      // databaseURL: "https://seu-projeto-default-rtdb.firebaseio.com",
+      // projectId: "seu-projeto",
+      // storageBucket: "seu-projeto.appspot.com",
+      // messagingSenderId: "1234567890",
+      // appId: "1:1234567890:web:xxxxxxxxxxxx"
+    };
 
-    socket.on('connect', () => {
-        console.log("Conectado ao servidor com sucesso! Meu ID é:", socket.id);
-    });
-    
-    socket.on('connect_error', (err) => {
-        console.error("Falha ao conectar ao servidor:", err.message);
-    });
+    // Inicializa o Firebase
+    firebaseApp = firebase.initializeApp(firebaseConfig);
+    database = firebase.database();
 
-    socket.on('opponentUpdate', (data) => {
-        if (!currentScene) return;
+    // Autentica o jogador anonimamente
+    firebase.auth().signInAnonymously()
+      .then(() => {
+        const user = firebase.auth().currentUser;
+        if (user) {
+          myAuthId = user.uid;
+          console.log("Autenticado com sucesso! Meu ID é:", myAuthId);
+          
+          playersRef = database.ref('players');
+          const myPlayerRef = playersRef.child(myAuthId);
+          
+          // Sistema de presença: Remove o jogador do banco de dados quando ele se desconectar
+          myPlayerRef.onDisconnect().remove();
 
-        // Se o oponente ainda não existe, cria ele
-        if (!opponents[data.id]) {
-            console.log("Um novo oponente apareceu:", data.id);
-            const opponent = BABYLON.MeshBuilder.CreateCapsule("opponent_" + data.id, { height: 2, radius: 0.5 }, currentScene);
-            opponent.rotationQuaternion = new BABYLON.Quaternion();
-            const opponentMaterial = new BABYLON.StandardMaterial("opponentMat_" + data.id, currentScene);
-            
-            if (data.texture && data.texture.includes('base64')) {
-                const rawBase64 = data.texture.split(',')[1];
-                opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture_" + data.id, currentScene);
-            } else {
-                opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
-            }
-            opponent.material = opponentMaterial;
-            opponents[data.id] = opponent; // Guarda o oponente no nosso objeto de controle
+          // Começa a escutar por mudanças na sessão de jogo
+          listenForGameSessionChanges();
         }
+      })
+      .catch((error) => {
+        console.error("Falha na autenticação anônima:", error);
+      });
+}
+
+function listenForGameSessionChanges() {
+    gameSessionRef = database.ref('game_session');
+    
+    // Escuta por qualquer mudança na sessão de jogo (ex: um host iniciou um jogo)
+    gameSessionRef.on('value', (snapshot) => {
+        const gameData = snapshot.val();
+        // Se existe uma sessão de jogo e eu não sou o host, eu entro no jogo
+        if (gameData && gameData.gameId && !isHost) {
+            console.log("Recebemos ordem do host para iniciar o jogo:", gameData.gameId);
+            launchGame(gameData.gameId);
+        }
+    });
+}
+
+function setupMultiplayerListeners() {
+    if (!playersRef) return;
+    
+    // NOVO JOGADOR ENTROU
+    playersRef.on('child_added', (snapshot) => {
+        const data = snapshot.val();
+        const id = snapshot.key;
+
+        if (!currentScene || id === myAuthId || opponents[id]) return; 
+
+        console.log("Um novo oponente apareceu:", id);
+        const opponent = BABYLON.MeshBuilder.CreateCapsule("opponent_" + id, { height: 2, radius: 0.5 }, currentScene);
+        opponent.rotationQuaternion = new BABYLON.Quaternion();
+        const opponentMaterial = new BABYLON.StandardMaterial("opponentMat_" + id, currentScene);
         
-        // Atualiza a posição e rotação do oponente
-        const opponentMesh = opponents[data.id];
+        if (data.texture && data.texture.includes('base64')) {
+            const rawBase64 = data.texture.split(',')[1];
+            opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture_" + id, currentScene);
+        } else {
+            opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
+        }
+        opponent.material = opponentMaterial;
+        opponents[id] = opponent;
+    });
+
+    // JOGADOR EXISTENTE SE MOVIMENTOU
+    playersRef.on('child_changed', (snapshot) => {
+        const data = snapshot.val();
+        const id = snapshot.key;
+
+        if (!currentScene || id === myAuthId) return;
+
+        const opponentMesh = opponents[id];
         if (opponentMesh) {
             const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
             const targetRot = new BABYLON.Quaternion(data.rot.x, data.rot.y, data.rot.z, data.rot.w);
@@ -252,30 +306,32 @@ function initializeSocketIO() {
             opponentMesh.rotationQuaternion = BABYLON.Quaternion.Slerp(opponentMesh.rotationQuaternion, targetRot, 0.2);
         }
     });
-    
-    socket.on('opponentBallUpdate', (data) => {
-        if (ball && ball.physicsImpostor && !isHost) {
-            const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
-            const targetVel = new BABYLON.Vector3(data.vel.x, data.vel.y, data.vel.z);
-            ball.position = BABYLON.Vector3.Lerp(ball.position, targetPos, 0.5);
-            ball.physicsImpostor.setLinearVelocity(targetVel);
-        }
-    });
 
-    socket.on('playerDisconnected', (id) => {
+    // JOGADOR DESCONECTOU
+    playersRef.on('child_removed', (snapshot) => {
+        const id = snapshot.key;
         console.log("Oponente desconectou:", id);
         if (opponents[id]) {
-            opponents[id].dispose(); // Remove o mesh da cena
-            delete opponents[id]; // Remove do nosso objeto de controle
+            opponents[id].dispose();
+            delete opponents[id];
         }
     });
-
-    socket.on('gameStarted', (data) => {
-        console.log("Recebemos ordem do host para iniciar o jogo:", data.gameId);
-        isHost = false; // Se recebemos essa ordem, não somos o host
-        launchGame(data.gameId);
-    });
+    
+    // ESCUTA PELA BOLA (SE NÃO FOR O HOST)
+    if (!isHost) {
+        const ballRef = database.ref('game_session/ball');
+        ballRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (ball && ball.physicsImpostor && data && data.pos && data.vel) {
+                const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
+                const targetVel = new BABYLON.Vector3(data.vel.x, data.vel.y, data.vel.z);
+                ball.position = BABYLON.Vector3.Lerp(ball.position, targetPos, 0.5);
+                ball.physicsImpostor.setLinearVelocity(targetVel);
+            }
+        });
+    }
 }
+
 
 const keys = { w: false, a: false, s: false, d: false, ' ': false };
 window.addEventListener('keydown', (event) => {
@@ -337,11 +393,13 @@ function setupJoystick() {
 }
 
 async function launchGame(gameId) {
-    // Limpa o estado dos oponentes anteriores
     for (const id in opponents) {
         if(opponents[id]) opponents[id].dispose();
     }
     opponents = {};
+    
+    if (playersRef) playersRef.off();
+    if (gameSessionRef) gameSessionRef.off();
     
     gameState.score = { blue: 0, red: 0 };
     ball = null;
@@ -381,8 +439,9 @@ async function launchGame(gameId) {
         player = gameData.player;
         player.moveDirection = new BABYLON.Vector3(0, 0, 0);
         
-        render(); // Mostra a UI do jogo
+        render();
         setupJoystick();
+        setupMultiplayerListeners();
         
         let lastSentTime = 0;
         engine.runRenderLoop(() => {
@@ -426,22 +485,26 @@ async function launchGame(gameId) {
                 player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
             }
             
-            // ALTERADO: Lógica de envio de dados para o servidor Socket.IO
-            if (socket && socket.connected && (Date.now() - lastSentTime > 100)) {
-                const simplePos = { x: player.position.x, y: player.position.y, z: player.position.z };
-                const simpleRot = { x: player.rotationQuaternion.x, y: player.rotationQuaternion.y, z: player.rotationQuaternion.z, w: player.rotationQuaternion.w };
+            // LÓGICA DE ENVIO DE DADOS PARA O FIREBASE
+            if (myAuthId && (Date.now() - lastSentTime > 100)) {
+                const myPlayerRef = playersRef.child(myAuthId);
                 const myTexture = localStorage.getItem("playerAvatarTexture");
                 
-                socket.emit('playerUpdate', { pos: simplePos, rot: simpleRot, texture: myTexture });
+                const playerData = {
+                    pos: { x: player.position.x, y: player.position.y, z: player.position.z },
+                    rot: { x: player.rotationQuaternion.x, y: player.rotationQuaternion.y, z: player.rotationQuaternion.z, w: player.rotationQuaternion.w },
+                    texture: myTexture
+                };
+                
+                myPlayerRef.set(playerData);
 
                 if (isHost && ball && ball.physicsImpostor) {
                     const ballVel = ball.physicsImpostor.getLinearVelocity();
-                    const simpleBallPos = { x: ball.position.x, y: ball.position.y, z: ball.position.z };
-                    const simpleBallVel = { x: ballVel.x, y: ballVel.y, z: ballVel.z };
-                    socket.emit('ballUpdate', { 
-                        pos: simpleBallPos, 
-                        vel: simpleBallVel
-                    });
+                    const ballData = {
+                        pos: { x: ball.position.x, y: ball.position.y, z: ball.position.z },
+                        vel: { x: ballVel.x, y: ballVel.y, z: ballVel.z }
+                    };
+                    database.ref('game_session/ball').set(ballData);
                 }
                 lastSentTime = Date.now();
             }
@@ -495,8 +558,8 @@ async function launchAvatarEditor() {
 // SEÇÃO 6: INICIALIZAÇÃO E EVENT LISTENERS
 // =======================================================
 document.addEventListener('DOMContentLoaded', () => {
-    // NOVO: Inicializa a conexão com o servidor Socket.IO
-    initializeSocketIO();
+    // INICIALIZA A CONEXÃO COM O FIREBASE
+    initializeFirebase();
 
     appContainer.addEventListener('click', (event) => {
         const target = event.target;
@@ -506,16 +569,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gameCard) {
             const gameId = gameCard.dataset.gameId;
 
-            // ALTERADO: Lógica para iniciar o jogo
+            // LÓGICA PARA INICIAR O JOGO COMO HOST
             console.log("Clicou para iniciar o jogo. Eu serei o Host!");
-            isHost = true; // Quem clica no botão se torna o Host
+            isHost = true; 
             
-            // Avisa o servidor que estamos começando o jogo, para que ele avise os outros jogadores
-            if(socket && socket.connected) {
-                socket.emit('hostStartedGame', { gameId: gameId });
+            // Avisa os outros jogadores escrevendo na sessão de jogo do Firebase
+            if(gameSessionRef) {
+                gameSessionRef.set({
+                    gameId: gameId,
+                    hostId: myAuthId
+                });
             }
 
-            // Inicia o jogo para nós mesmos imediatamente
             launchGame(gameId);
             return;
         }
@@ -530,6 +595,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (currentScene) currentScene.dispose();
                     currentScene = null;
                 }
+                // LIMPA A SESSÃO DE JOGO AO VOLTAR PARA O MENU
+                 if(isHost && gameSessionRef) {
+                     gameSessionRef.remove();
+                 }
+                 if(playersRef && myAuthId) {
+                     playersRef.child(myAuthId).remove();
+                 }
+                 isHost = false;
+
                  gameState.currentScreen = 'menu';
                  render();
             }
