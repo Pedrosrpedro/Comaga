@@ -13,6 +13,19 @@
 </head>
 <body>
 
+   <!-- NOVO: Modal para escolher entre criar ou entrar em uma sala -->
+<div id="join-game-modal" class="hidden">
+    <div class="modal-content">
+        <h2 id="modal-game-title">Nome do Jogo</h2>
+        <p>Você quer criar uma nova sala ou entrar em uma existente?</p>
+        <div class="modal-buttons">
+            <button id="create-room-btn">Criar Sala</button>
+            <button id="join-room-btn">Entrar em Sala</button>
+        </div>
+        <button id="close-modal-btn">Cancelar</button>
+    </div>
+</div>
+    
     <!-- Container principal onde a interface (menu, HUD) será renderizada pelo JavaScript -->
     <div id="app"></div>
 
