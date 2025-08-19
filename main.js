@@ -237,8 +237,9 @@ function setupConnectionEvents() {
     });
 
     currentConnection.on('data', (data) => {
-        const scene = currentScene;
-        if (!scene) return;
+        if (!currentScene) {
+            return;
+        }
         
         if (data.type === 'start_game') {
             launchGame(data.gameId);
@@ -246,27 +247,27 @@ function setupConnectionEvents() {
         }
 
         if (data.type === 'ready' && !opponent) {
-            opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
+            opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, currentScene);
             opponent.rotationQuaternion = new BABYLON.Quaternion();
-            const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
+            const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", currentScene);
             
-            if (data.texture) {
+            if (data.texture && data.texture.includes('base64')) {
                 const rawBase64 = data.texture.split(',')[1];
-                opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", scene);
+                opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", currentScene);
             } else {
                 opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
             }
             opponent.material = opponentMaterial;
         }
         else if (data.type === 'update' && opponent) {
-            // **CORREÇÃO APLICADA AQUI (RECEBIMENTO)**
+            // **CORREÇÃO: Recria os vetores a partir dos dados simples recebidos**
             const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
             const targetRot = new BABYLON.Quaternion(data.rot.x, data.rot.y, data.rot.z, data.rot.w);
             opponent.position = BABYLON.Vector3.Lerp(opponent.position, targetPos, 0.2);
             opponent.rotationQuaternion = BABYLON.Quaternion.Slerp(opponent.rotationQuaternion, targetRot, 0.2);
         }
         else if (data.type === 'ball_update' && ball && !isHost) {
-            // **CORREÇÃO APLICADA AQUI (RECEBIMENTO)**
+            // **CORREÇÃO: Recria os vetores a partir dos dados simples recebidos**
             const targetPos = new BABYLON.Vector3(data.pos.x, data.pos.y, data.pos.z);
             const targetVel = new BABYLON.Vector3(data.vel.x, data.vel.y, data.vel.z);
             ball.position = BABYLON.Vector3.Lerp(ball.position, targetPos, 0.5);
@@ -284,11 +285,9 @@ function setupConnectionEvents() {
         opponent = null;
         currentConnection = null;
         if (gameState.currentScreen.startsWith('playing')) {
-            if (engine) {
-                engine.stopRenderLoop();
-                currentScene?.dispose();
-                currentScene = null;
-            }
+            if (engine) engine.stopRenderLoop();
+            if (currentScene) currentScene.dispose();
+            currentScene = null;
             gameState.currentScreen = 'menu';
             render();
         }
@@ -363,7 +362,7 @@ async function launchGame(gameId) {
 
     if (engine) {
         engine.stopRenderLoop();
-        currentScene?.dispose();
+        if (currentScene) currentScene.dispose();
         currentScene = null;
     }
 
@@ -398,7 +397,7 @@ async function launchGame(gameId) {
         player = gameData.player;
         player.moveDirection = new BABYLON.Vector3(0, 0, 0);
         
-        render(); // Renderiza a UI do jogo ANTES de qualquer outra coisa
+        render(); // Mostra a UI do jogo
         setupJoystick();
         
         if (currentConnection) {
@@ -416,16 +415,19 @@ async function launchGame(gameId) {
             const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
             const hit = currentScene.pickWithRay(ray, (mesh) => mesh.name !== "player" && mesh.name !== "opponent");
             const isOnGround = hit.hit;
+
             if (keys[' '] && isOnGround) {
                 player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, jumpForce, 0), player.getAbsolutePosition());
                 keys[' '] = false;
             }
+
             let totalMoveX = moveX;
             let totalMoveZ = moveZ;
             if (keys.w) totalMoveZ += 1;
             if (keys.s) totalMoveZ -= 1;
             if (keys.a) totalMoveX -= 1;
             if (keys.d) totalMoveX += 1;
+
             const cameraForward = camera.getDirection(BABYLON.Vector3.Forward());
             const cameraRight = camera.getDirection(BABYLON.Vector3.Right());
             cameraForward.y = 0;
@@ -434,6 +436,7 @@ async function launchGame(gameId) {
             cameraRight.normalize();
             const moveDirection = cameraRight.scale(totalMoveX).add(cameraForward.scale(totalMoveZ));
             const currentVelocity = player.physicsImpostor.getLinearVelocity();
+
             if (moveDirection.lengthSquared() > 0) {
                 moveDirection.normalize();
                 player.moveDirection.copyFrom(moveDirection);
@@ -445,7 +448,7 @@ async function launchGame(gameId) {
             }
             
             if (currentConnection && currentConnection.open && (Date.now() - lastSentTime > 100)) {
-                // **CORREÇÃO APLICADA AQUI (ENVIO)**
+                // **CORREÇÃO: Envia objetos simples com os dados**
                 const simplePos = { x: player.position.x, y: player.position.y, z: player.position.z };
                 const simpleRot = { x: player.rotationQuaternion.x, y: player.rotationQuaternion.y, z: player.rotationQuaternion.z, w: player.rotationQuaternion.w };
                 currentConnection.send({ type: 'update', pos: simplePos, rot: simpleRot });
@@ -481,7 +484,7 @@ async function launchAvatarEditor() {
 
     if (engine) {
         engine.stopRenderLoop();
-        currentScene?.dispose();
+        if (currentScene) currentScene.dispose();
         currentScene = null;
     }
 
@@ -552,7 +555,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (navAction === "home") {
                  if (engine) {
                     engine.stopRenderLoop();
-                    currentScene?.dispose();
+                    if (currentScene) currentScene.dispose();
                     currentScene = null;
                 }
                  gameState.currentScreen = 'menu';
@@ -587,7 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (backBtn) {
                 if (engine) {
                     engine.stopRenderLoop();
-                    currentScene?.dispose();
+                    if (currentScene) currentScene.dispose();
                     currentScene = null;
                 }
                 gameState.currentScreen = 'menu';
@@ -595,4 +598,65 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (saveBtn) {
                 const base64Canvas = gameState.editor.texture.getContext().canvas.toDataURL();
-                localStorage.setItem("playerAvatarTexture",.
+                // **LINHA CORRIGIDA**
+                localStorage.setItem("playerAvatarTexture", base64Canvas);
+                alert("Avatar salvo!");
+            }
+            if (controlBtn && gameState.editor.scene) {
+                const camera = gameState.editor.scene.activeCamera;
+                const control = controlBtn.dataset.control;
+                if(control === 'rot-left') camera.alpha -= 0.3;
+                if(control === 'rot-right') camera.alpha += 0.3;
+                if(control === 'view-top') camera.beta = 0.1;
+                if(control === 'view-bottom') camera.beta = Math.PI - 0.1;
+            }
+        }
+    });
+
+    canvas.addEventListener('pointerdown', (evt) => {
+        if (gameState.currentScreen !== 'avatar_editor' || gameState.editor.tool === 'move') return;
+        gameState.editor.isPainting = true;
+        paint(evt);
+    });
+    canvas.addEventListener('pointermove', (evt) => {
+        if (gameState.currentScreen !== 'avatar_editor' || !gameState.editor.isPainting || gameState.editor.tool === 'move') return;
+        paint(evt);
+    });
+    canvas.addEventListener('pointerup', () => {
+        gameState.editor.isPainting = false;
+    });
+    canvas.addEventListener('pointerout', () => {
+        gameState.editor.isPainting = false;
+    });
+
+    function paint(evt) {
+        const { scene, tool, color, texture } = gameState.editor;
+        if (!scene) return;
+
+        const pickInfo = scene.pick(scene.pointerX, scene.pointerY);
+        if (pickInfo.hit) {
+            const textureContext = texture.getContext();
+            
+            if (tool === 'bucket') {
+                textureContext.fillStyle = color;
+                textureContext.fillRect(0, 0, 512, 512);
+            } 
+            else if (tool === 'pen' || tool === 'eraser') {
+                const uv = pickInfo.getTextureCoordinates();
+                if(!uv) return;
+
+                const posX = uv.x * 512;
+                const posY = (1 - uv.y) * 512;
+                
+                textureContext.beginPath();
+                textureContext.fillStyle = (tool === 'eraser') ? '#cccccc' : color;
+                const brushSize = (tool === 'eraser') ? 20 : 10;
+                textureContext.arc(posX, posY, brushSize, 0, 2 * Math.PI);
+                textureContext.fill();
+            }
+            texture.update();
+        }
+    }
+
+    render();
+});
