@@ -202,7 +202,7 @@ h2 {
 .hud-container { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background-color: rgba(0, 0, 0, 0.5); padding: 10px 20px; border-radius: 10px; text-align: center; font-size: 20px; z-index: 100;}
 #hudTimer { font-size: 24px; font-weight: bold; margin-top: 5px;}
 
-/* NOVO: Estilo para o Botão de Pulo */
+/* CORREÇÃO: Estilo para o Botão de Pulo com sombra */
 #jumpButton {
     position: absolute;
     bottom: 35px;
@@ -210,7 +210,7 @@ h2 {
     width: 80px;
     height: 80px;
     background-color: rgba(255, 255, 255, 0.3);
-    border: 2px solid white;
+    border: 2px solid rgba(255, 255, 255, 0.8);
     border-radius: 50%;
     z-index: 10;
     display: flex;
@@ -219,6 +219,19 @@ h2 {
     font-size: 2rem;
     color: white;
     cursor: pointer;
+    text-shadow: 0px 0px 5px rgba(0, 0, 0, 0.7);
+    box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5);
+}
+
+/* CORREÇÃO: Estilos para o joystick (nipplejs) para garantir visibilidade */
+#joystickZone .back {
+    background-color: rgba(0, 0, 0, 0.3) !important;
+    border: 2px solid rgba(255, 255, 255, 0.5) !important;
+}
+
+#joystickZone .front {
+    background-color: rgba(255, 255, 255, 0.5) !important;
+    border: 2px solid white !important;
 }
 
 
