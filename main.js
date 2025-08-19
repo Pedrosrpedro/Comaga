@@ -239,35 +239,27 @@ function setupConnectionEvents() {
     });
 
     currentConnection.on('data', (data) => {
-        if (data.type === 'start_game') {
-            launchGame(data.gameId);
-            return;
-        }
-
-        const scene = currentScene;
-        if (!scene) {
-            return;
-        }
-        
         // ========= INÍCIO DA CORREÇÃO DEFINITIVA =========
-        if (data.type === 'ready' && !opponent) {
-            console.log("Oponente está pronto. Criando seu personagem.");
-            opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
-            opponent.rotationQuaternion = new BABYLON.Quaternion();
-            const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
-            
-            if (data.texture) {
-                // A textura é uma data URL: "data:image/png;base64,iVBORw0K..."
-                // Precisamos extrair apenas a parte do base64 após a vírgula.
-                const rawBase64 = data.texture.split(',')[1];
-                // Usamos a função correta do Babylon.js para carregar a textura a partir da string.
-                opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", scene);
-            } else {
-                // Se o oponente não tiver uma textura salva, ele fica vermelho.
-                opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
-            }
-            opponent.material = opponentMaterial;
-        }
+if (data.type === 'ready' && !opponent) {
+    console.log("Oponente está pronto. Criando seu personagem.");
+    opponent = BABYLON.MeshBuilder.CreateCapsule("opponent", { height: 2, radius: 0.5 }, scene);
+    opponent.rotationQuaternion = new BABYLON.Quaternion();
+    const opponentMaterial = new BABYLON.StandardMaterial("opponentMat", scene);
+    
+    if (data.texture) {
+        // A textura é uma data URL no formato: "data:image/png;base64,iVBORw0K..."
+        // Precisamos extrair apenas a parte do base64 após a vírgula.
+        const rawBase64 = data.texture.split(',')[1];
+        
+        // Usamos a função correta do Babylon.js para carregar a textura a partir da string extraída.
+        opponentMaterial.diffuseTexture = BABYLON.Texture.CreateFromBase64String(rawBase64, "opponentTexture", scene);
+    } else {
+        // Se o oponente não tiver uma textura salva, ele fica vermelho.
+        opponentMaterial.diffuseColor = new BABYLON.Color3.Red();
+    }
+    opponent.material = opponentMaterial;
+}
+// ========= FIM DA CORREÇÃO DEFINITIVA =========
         // ========= FIM DA CORREÇÃO DEFINITIVA =========
         else if (data.type === 'update' && opponent) {
             const targetPos = new BABYLON.Vector3(data.pos._x, data.pos._y, data.pos._z);
