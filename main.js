@@ -389,13 +389,14 @@ function setupJoystick() {
 // SUBSTITUA APENAS ESTA FUNÇÃO
 // =======================================================
 async function launchGame(gameId) {
+    // --- ETAPA 1: PREPARAÇÃO INICIAL ---
+    console.log("[DEBUG] Etapa 1: Preparando para iniciar o jogo.");
     gameState.score = { blue: 0, red: 0 };
     opponent = null;
     ball = null;
     gameState.currentScreen = 'loading';
-    render(); // Mostra a tela de "Carregando..."
+    render();
 
-    // Limpeza da cena anterior
     if (engine) {
         engine.stopRenderLoop();
         currentScene?.dispose();
@@ -403,6 +404,8 @@ async function launchGame(gameId) {
     }
 
     try {
+        // --- ETAPA 2: INICIALIZAÇÃO DO MOTOR E CARREGAMENTO DO JOGO ---
+        console.log("[DEBUG] Etapa 2: Inicializando motor gráfico e carregando assets do jogo.");
         if (!engine) {
             engine = new BABYLON.Engine(canvas, true, null, true);
         }
@@ -414,11 +417,9 @@ async function launchGame(gameId) {
                 if (scoringTeam === 'red') gameState.score.red++;
                 if (scoringTeam === 'blue') gameState.score.blue++;
                 render();
-                
                 ball.position = new BABYLON.Vector3(0, 5, 0);
                 ball.physicsImpostor.setLinearVelocity(BABYLON.Vector3.Zero());
                 ball.physicsImpostor.setAngularVelocity(BABYLON.Vector3.Zero());
-
                 if (isHost && currentConnection) {
                     currentConnection.send({ type: 'score_update', score: gameState.score });
                 }
@@ -426,56 +427,56 @@ async function launchGame(gameId) {
             ball = gameData.ball;
         } else {
             gameState.currentScreen = 'playing_disaster';
+            // O erro pode estar dentro desta função. Vamos envolvê-la.
             gameData = await startDisasterGame(engine, canvas, updateHud, sounds);
         }
         
         currentScene = gameData.scene;
         player = gameData.player;
         player.moveDirection = new BABYLON.Vector3(0, 0, 0);
-        
-        // ================== MUDANÇA CRÍTICA NA ORDEM ==================
-        
-        // 1. PRIMEIRO, renderiza a UI do jogo para garantir que o joystickZone esteja visível.
-        render();
-        window.addEventListener("resize", () => { if(engine) engine.resize(); });
+        console.log("[DEBUG] Etapa 2 concluída com sucesso.");
 
-        // 2. SEGUNDO, agora que o joystickZone está visível, configure o joystick.
-        try {
-            setupJoystick();
-        } catch(joystickError) {
-            console.error("FALHA AO INICIAR O JOYSTICK:", joystickError);
-        }
-        
-        // 3. TERCEIRO, envie a mensagem que está pronto.
+        // --- ETAPA 3: RENDERIZAÇÃO DA UI E INICIALIZAÇÃO DO JOYSTICK ---
+        console.log("[DEBUG] Etapa 3: Renderizando UI e configurando controles.");
+        render(); // Torna a UI do jogo visível
+        window.addEventListener("resize", () => { if (engine) engine.resize(); });
+        setupJoystick();
+        console.log("[DEBUG] Etapa 3 concluída com sucesso.");
+
+        // --- ETAPA 4: COMUNICAÇÃO DE REDE ---
         if (currentConnection && currentConnection.open) {
-            console.log("Enviando mensagem 'ready' para o oponente...");
+            console.log("[DEBUG] Etapa 4: Enviando mensagem 'ready' para o oponente...");
             const myTexture = localStorage.getItem("playerAvatarTexture");
             currentConnection.send({ type: 'ready', texture: myTexture });
+            console.log("[DEBUG] Etapa 4 concluída com sucesso.");
         }
-        
-        // 4. FINALMENTE, inicie o loop de renderização do jogo.
+
+        // --- ETAPA 5: INÍCIO DO LOOP PRINCIPAL DO JOGO ---
+        console.log("[DEBUG] Etapa 5: Iniciando o render loop.");
         let lastSentTime = 0;
         engine.runRenderLoop(() => {
-            if (!currentScene || !player || !player.physicsImpostor) return; // Proteção extra
+            if (!currentScene || !player || !player.physicsImpostor || !currentScene.activeCamera) return;
 
-            const camera = currentScene.activeCamera;
-            if (!camera) return; // Proteção extra
-
+            const scene = currentScene;
+            const camera = scene.activeCamera;
             const playerSpeed = 7.5;
             const jumpForce = 6;
             const ray = new BABYLON.Ray(player.position, new BABYLON.Vector3(0, -1, 0), 1.1);
-            const hit = currentScene.pickWithRay(ray, (mesh) => mesh.name !== "player" && mesh.name !== "opponent");
+            const hit = scene.pickWithRay(ray, (mesh) => mesh.name !== "player" && mesh.name !== "opponent");
             const isOnGround = hit.hit;
+
             if (keys[' '] && isOnGround) {
                 player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, jumpForce, 0), player.getAbsolutePosition());
                 keys[' '] = false;
             }
+
             let totalMoveX = moveX;
             let totalMoveZ = moveZ;
             if (keys.w) totalMoveZ += 1;
             if (keys.s) totalMoveZ -= 1;
             if (keys.a) totalMoveX -= 1;
             if (keys.d) totalMoveX += 1;
+
             const cameraForward = camera.getDirection(BABYLON.Vector3.Forward());
             const cameraRight = camera.getDirection(BABYLON.Vector3.Right());
             cameraForward.y = 0;
@@ -484,33 +485,40 @@ async function launchGame(gameId) {
             cameraRight.normalize();
             const moveDirection = cameraRight.scale(totalMoveX).add(cameraForward.scale(totalMoveZ));
             const currentVelocity = player.physicsImpostor.getLinearVelocity();
+
             if (moveDirection.lengthSquared() > 0) {
                 moveDirection.normalize();
                 player.moveDirection.copyFrom(moveDirection);
                 const newVelocity = moveDirection.scale(playerSpeed);
                 player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVelocity.x, currentVelocity.y, newVelocity.z));
             } else {
-                player.moveDirection.set(0, 0, 0); 
+                player.moveDirection.set(0, 0, 0);
                 player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
             }
-            
+
             if (currentConnection && currentConnection.open && (Date.now() - lastSentTime > 100)) {
                 currentConnection.send({ type: 'update', pos: player.position, rot: player.rotationQuaternion });
                 if (isHost && ball && ball.physicsImpostor) {
-                    currentConnection.send({ 
-                        type: 'ball_update', 
-                        pos: ball.position, 
-                        vel: ball.physicsImpostor.getLinearVelocity() 
+                    currentConnection.send({
+                        type: 'ball_update',
+                        pos: ball.position,
+                        vel: ball.physicsImpostor.getLinearVelocity()
                     });
                 }
                 lastSentTime = Date.now();
             }
-            
-            if (currentScene && currentScene.isReady()) currentScene.render();
+
+            if (scene && scene.isReady()) scene.render();
         });
+        console.log("[DEBUG] Etapa 5 concluída. O jogo está rodando.");
 
     } catch (error) {
-        console.error("FALHA CRÍTICA AO INICIAR O JOGO:", error);
+        // SE HOUVER QUALQUER ERRO EM QUALQUER UMA DAS ETAPAS, ELE SERÁ PEGO AQUI!
+        console.error("!!!!!!!!!! ERRO FATAL CAPTURADO DENTRO DE launchGame !!!!!!!!!!");
+        console.error("TIPO DE ERRO:", error.name); // Ex: TypeError, ReferenceError
+        console.error("MENSAGEM:", error.message); // A mensagem de erro real!
+        console.error("RASTRO (STACK):", error.stack); // Onde no código o erro aconteceu.
+        
         gameState.currentScreen = 'menu';
         render(); // Volta para o menu em caso de falha
     }
