@@ -391,6 +391,9 @@ function setupJoystick() {
 // =======================================================
 // SUBSTITUA APENAS ESTA FUNÇÃO (VERSÃO COM RENDER LOOP BLINDADO)
 // =======================================================
+// =======================================================
+// 1. SUBSTITUA ESTA FUNÇÃO (CORREÇÃO NO ENVIO DE DADOS)
+// =======================================================
 async function launchGame(gameId) {
     gameState.score = { blue: 0, red: 0 };
     opponent = null;
@@ -438,19 +441,15 @@ async function launchGame(gameId) {
         setupJoystick();
         
         if (currentConnection && currentConnection.open) {
-            console.log("Enviando mensagem 'ready' para o oponente...");
             const myTexture = localStorage.getItem("playerAvatarTexture");
             currentConnection.send({ type: 'ready', texture: myTexture });
         }
         
         let lastSentTime = 0;
-        
-        // ================== A MUDANÇA CRÍTICA ESTÁ AQUI ==================
         engine.runRenderLoop(() => {
             try {
-                // Adicionamos uma verificação robusta no início de cada frame.
                 if (!currentScene || !player || !player.physicsImpostor || !currentScene.activeCamera || !currentScene.isReady()) {
-                    return; // Pula este frame se algo essencial não estiver pronto.
+                    return;
                 }
 
                 const scene = currentScene;
@@ -492,37 +491,42 @@ async function launchGame(gameId) {
                     player.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, currentVelocity.y, 0));
                 }
 
+                // ================== A CORREÇÃO ESTÁ AQUI ==================
                 if (currentConnection && currentConnection.open && (Date.now() - lastSentTime > 100)) {
-                    currentConnection.send({ type: 'update', pos: player.position, rot: player.rotationQuaternion });
+                    // Criamos objetos simples com as coordenadas
+                    const simplePos = { x: player.position.x, y: player.position.y, z: player.position.z };
+                    const simpleRot = { x: player.rotationQuaternion.x, y: player.rotationQuaternion.y, z: player.rotationQuaternion.z, w: player.rotationQuaternion.w };
+
+                    currentConnection.send({ type: 'update', pos: simplePos, rot: simpleRot });
+
                     if (isHost && ball && ball.physicsImpostor) {
+                        const ballVel = ball.physicsImpostor.getLinearVelocity();
+                        const simpleBallPos = { x: ball.position.x, y: ball.position.y, z: ball.position.z };
+                        const simpleBallVel = { x: ballVel.x, y: ballVel.y, z: ballVel.z };
+
                         currentConnection.send({
                             type: 'ball_update',
-                            pos: ball.position,
-                            vel: ball.physicsImpostor.getLinearVelocity()
+                            pos: simpleBallPos,
+                            vel: simpleBallVel
                         });
                     }
                     lastSentTime = Date.now();
                 }
                 
-                // A renderização é a última coisa a acontecer no frame.
                 scene.render();
             
             } catch (loopError) {
-                // SE O ERRO ESTIVER AQUI, NÓS VAMOS CAPTURÁ-LO!
-                console.error("!!!!!!!!!! ERRO FATAL CAPTURADO DENTRO DO RENDER LOOP !!!!!!!!!!");
-                console.error("MENSAGEM:", loopError.message);
-                console.error("RASTRO (STACK):", loopError.stack);
-                
-                // Paramos o loop para evitar que o console seja inundado com o mesmo erro.
+                console.error("ERRO FATAL CAPTURADO DENTRO DO RENDER LOOP:", loopError.message);
                 engine.stopRenderLoop();
             }
         });
 
     } catch (initError) {
-        console.error("ERRO FATAL CAPTURADO DURANTE A INICIALIZAÇÃO (launchGame)", initError);
+        console.error("ERRO FATAL DURANTE A INICIALIZAÇÃO (launchGame)", initError);
         gameState.currentScreen = 'menu';
         render();
     }
+}
 }
 async function launchAvatarEditor() {
     gameState.currentScreen = 'loading';
